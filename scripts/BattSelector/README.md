@@ -22,4 +22,4 @@ Perfect for flying multiple size batteries on a single model, or multiple aircra
   - Probably Really Buggy, Enjoy
 
 ### Version History
-  - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.
+  - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
