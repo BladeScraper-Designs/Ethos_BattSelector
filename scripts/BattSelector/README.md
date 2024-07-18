@@ -1,4 +1,4 @@
-# FrSky ETHOS BattSelector
+# BattSelector
 Battery selection and alerts widget for FrSky Ethos.  Requires Ethos Version 1.5.10 or higher.<br>
 Perfect for flying multiple size batteries on a single model, or multiple aircraft on a single model file.
 
