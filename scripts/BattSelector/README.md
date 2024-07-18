@@ -18,7 +18,8 @@ Perfect for flying multiple size batteries on a single model, or multiple aircra
   - Use Capacity: Use this to set your Use(able) capacity.  Most people fly 80% of a battery and consider that "dead" (to preserve LiPo health).  The Percent Remaining reflects the remaining _usable_ capacity, e.g. 4000mAh when the battery is 5000mAh and Use Capacity set to 80%.
 
 ## Notes
-Currently only works on widgets of size 256x100px.  More sizes will be added eventually.
+  - Currently only works on widgets of size 256x100px.  More sizes will be added eventually.
+  - Probably Really Buggy, Enjoy
 
 ### Version History
-- Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.
+  - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.
