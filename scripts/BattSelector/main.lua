@@ -159,7 +159,7 @@ local function wakeup(widget)
     if environment.simulation then 
         newmAh = 1000
     else -- Otherwise, get mAh value from configured mAh sensor
-        local sensor = system.getSource("ESC Consumption")
+        local sensor = system.getSource("Consumption")
         if sensor ~= nil then
             newmAh = sensor:value()
         end
@@ -174,7 +174,7 @@ local function wakeup(widget)
                 newPercent = 0
             end
         
-        -- If mAh sensor has changed, update the % Remaining Sensor too
+        -- If the new percentage is different from the current percentage, refresh widget
         if widget.Data.currentPercent ~= newPercent then
             widget.Data.currentPercent = newPercent
             lcd.invalidate()
@@ -239,9 +239,9 @@ local function configure(widget)
     batteryPanel:open(false)
     fillBatteryPanel(batteryPanel, widget)
 
-    -- Create field for selecting mAh sensor to be used for percent calculations
-    local line = form.addLine("mAh Source Sensor")
-    form.addSensorField(line, nil, function() return widget.Config.mAhSensor end, function(newValue) widget.Config.mAhSensor = newValue end, function(candidate) return candidate:unit() == UNIT_MILLIAMPERE_HOUR end)
+    -- Create field for selecting mAh sensor to be used for percent calculations (Currently Disabled because it was acting weird and I couldn't get it to work)
+    --local line = form.addLine("mAh Source Sensor")
+    --form.addSensorField(line, nil, function() return widget.Config.mAhSensor end, function(newValue) widget.Config.mAhSensor = newValue end, function(candidate) return candidate:unit() == UNIT_MILLIAMPERE_HOUR end)
     
     -- Create field for entering desired "fly-to" percentage (80% typical)
     local line  = form.addLine("Use Capacity") 
