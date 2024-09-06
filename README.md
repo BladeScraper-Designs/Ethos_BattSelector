@@ -3,7 +3,7 @@ Battery selection and alerts widget for FrSky Ethos.  Requires Ethos Version 1.5
 Perfect for flying multiple size batteries on a single model, or multiple aircraft on a single model file. Or Both.
 
 ## Installation
-Easiest method for install is to download the .zip from the latest Release and use Ethos Suite Lua Development Tools to install it.<br>
+Easiest method for install is to download the .zip from the latest Release and use Ethos Suite's Lua Development Tools menu to install it.<br>
 
 ## Features
   - On-Screen Widget-Based Battery Selection - No need to navigate menus to set flight battery<br>
