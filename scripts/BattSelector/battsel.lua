@@ -5,6 +5,7 @@ batsell = {}
 local choiceField
 local sensor
 
+-- Set to true to enable debug output
 local useDebug = false
 
 -- local functions
@@ -49,6 +50,7 @@ local function updateRemainingSensor(widget)
     sensor:appId(0x4402)
     sensor:physId(0x10)
     end
+    
     sensor:value(widget.Data.currentPercent)
 end
 
@@ -94,65 +96,47 @@ end
 
 
 function batsell.build(widget)
-    local Batteries = {}
-    -- Create table for possible Battery Sizes
-    for i = 1, widget.Config.numBatts do
-        Batteries[i] = {widget.Batteries["Battery " .. i] .. "mAh", i }
-    end
-
     local w, h = lcd.getWindowSize()
-    lcd.font(FONT_XL)
-	local tsizeW_pc, tsizeH_pc = lcd.getTextSize("%") -- grabbing this as diff font size and need as offset for flight battery
+    
+    -- Create string that contains the remaining percent value plus the % symbol
+    local str_rp = tostring(widget.Data.currentPercent) .. "%"
+    local tsizeW_rp
+    local tsizeH_rp
+    local cHeight = 40
+    local offset = 0
 
+    -- Create form, position based on widget size and whether display percent on widget is enabled
+    if w >= 256 then
+        -- Check if Display Percentage on Widget is enabled
+        -- If it is:
+        if widget.Config.DisplayPercent then
+            lcd.font(FONT_XL)
+            tsizeW_rp, tsizeH_rp = lcd.getTextSize(str_rp)
+            pos_x = (w / 2)
+            pos_y = (h / 2)
+        else
+        -- If it isn't:
+            pos_x = (w / 2)
+            pos_y = (h / 2 - 40 / 2)
+        end
+ 
+    else
+        -- do nothing, widget box is too small for widget to fit
+    end    
 
-    lcd.color(lcd.RGB(255,255,255))
-	local str_fb = "Flight Battery"
-	local tsizeW_fb
-	local tsizeH_fb
-	local cHeight = 40
-	local offset = 0
+    if tsizeW_rp ~= nil then
+        -- Create table for Battery Sizes to display in choice field
+        local Batteries = {}
+        for i = 1, widget.Config.numBatts do
+            Batteries[i] = {widget.Batteries["Battery " .. i] .. "mAh", i }
+        end
 
-	if h >= 150 then
-
-		lcd.font(FONT_STD)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = (h / 2) - 40 / 2	
-		offset = 0
-		
-	elseif h >= 100 and h < 150 then
-
-		lcd.font(FONT_STD)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = ((h / 2) - 40 / 2) + 40/2
-		offset = 0
-	
-	elseif h >= 65 and h < 100 then	
-
-		lcd.font(FONT_S)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = ((h / 2) - 40 / 2) + 40/2
-		cHeight = 30
-		if h < 85 then 
-			offset = 10
-		else
-			offset = 0
-		end
-		
-	else
-		-- to small
-		
-	end	
-
-	if tsizeW_fb ~= nil then
-		form.create()
-		choiceField = form.addChoiceField(line, {x=s_x - tsizeW_fb, y=s_y-offset, w=tsizeW_fb * 2, h=cHeight}, Batteries, function() return widget.Config.selectedBattery end, function(value) 
-		widget.Config.selectedBattery = value
-		widget.Config.lastBattery = value
-		end)
-	end
+        form.create()
+        choiceField = form.addChoiceField(line, {x=pos_x - tsizeW_rp, y=pos_y, w=75 * 2, h=cHeight}, Batteries, function() return widget.Config.selectedBattery end, function(value) 
+            widget.Config.selectedBattery = value
+            widget.Config.lastBattery = value
+        end)
+    end
 end
 
 function batsell.paint(widget)
@@ -164,9 +148,6 @@ function batsell.paint(widget)
 
     if widget.Data.currentPercent ~= nil then
         if widget.Config.DisplayPercent then
-		
-
-			
 			if h >= 150 then	
 				--display percent below selector
 				lcd.font(FONT_XL)
@@ -193,39 +174,6 @@ function batsell.paint(widget)
 			end
 		end
     end
-	
-
-
-	local str_fb = "Flight Battery"
-	lcd.color(lcd.RGB(255,255,255))	
-	
-	if h >= 150 then
-	
-		lcd.font(FONT_STD)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 20 -  (tsizeH_fb/4) , str_fb) 
-		
-	elseif h >= 100 and h < 150 then
-	
-		lcd.font(FONT_STD)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2	
-		local offset_fb = - tsizeH_fb * 2
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 10 , str_fb) 	
-		
-	elseif h >= 65 and h < 100 then	
-	
-		offset = 10
-		lcd.font(FONT_S)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2	
-		local offset_fb = - tsizeH_fb * 2 
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 10 , str_fb) 
-		
-	else
-		-- hide as too small
-	end
 end
 
 function batsell.wakeup(widget)
@@ -347,13 +295,10 @@ function batsell.write(widget)
         end
         storage.write("Battery" .. i, widget.Batteries["Battery " .. i])
     end
-
     storage.write("defaultBattery", widget.Config.defaultBattery)
     storage.write("lastBattery", widget.Config.lastBattery)
     storage.write("selectedBattery", widget.Config.selectedBattery)
     storage.write("DisplayPercent", widget.Config.DisplayPercent)
-
-
 end
 
 function batsell.event(widget, category, value, x, y)
