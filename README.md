@@ -17,12 +17,12 @@ Easiest method for install is to download the .zip from the latest Release and u
   - Number Of Batteries: 1 to 5 Different Battery Sizes<br>
   - Battery N: Set LiPo _Rated_ Capacity Here<br>
   - Default: Set to a specific battery if you want it to always default to that, or set to Last Used to default to whatever you used last time<br>
-  - mAh Source Sensor: Currently DISABLED and HIDDEN.  You must have a mAh sensor called "Consumption" for this Lua to work currently.<br>
-  - Use Capacity: Use this to set your Use(able) capacity.  Most people fly 80% of a battery and consider that "dead" (to preserve LiPo health).  The Percent Remaining reflects the remaining _usable_ capacity, e.g. 4000mAh when the battery is 5000mAh and Use Capacity set to 80%.
+  - Use Capacity: Use this to set your Use(able) capacity.  Most people fly 80% of a battery and consider that "dead" (to preserve LiPo health).  The Percent Remaining telemetry sensor and display reflects the remaining _usable_ capacity, e.g. 4000mAh when the battery is 5000mAh and Use Capacity set to 80%.
 
 ## Notes
-  - Currently only works on widgets of size 256x100px.  More sizes will be added eventually.
-  - Probably Really Buggy, Enjoy
+  - This widget uses the mAh sensor and creates the Percent Remaining sensor, so you don't need one from any other source. If you're using Rotorflight, disable the "Battery Charge Level" sensor.<br>
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/RotorflightFuel.png?raw=true)
 
 ### Version History
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
+
