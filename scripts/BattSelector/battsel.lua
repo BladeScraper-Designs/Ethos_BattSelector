@@ -69,22 +69,6 @@ end
 -- This function is called when the widget is first created and returns the default configuration data
 function batsell.create(widget)
 
-	-- if we are running frsky and sensor does not exist.. make it
-	-- this is the rotorflight sensor id
-	-- if you dont want this function - just comment it out
-	if system.getSource("Rx RSSI1") == nil then
-	
-		sensor = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, appId = 0x5250})
-
-		if sensor == nil then
-			sensor = model.createSensor()
-			sensor:name("mAh")
-			sensor:appId(0x5250)
-			sensor:physId(0)
-		end			
-	
-	end
-
     return {
         Config = { -- Set Default Configuration Data
             ["numBatts"] = 2, 
@@ -169,8 +153,6 @@ function batsell.build(widget)
 		widget.Config.lastBattery = value
 		end)
 	end
-
-
 end
 
 function batsell.paint(widget)
@@ -244,7 +226,6 @@ function batsell.paint(widget)
 	else
 		-- hide as too small
 	end
-
 end
 
 function batsell.wakeup(widget)
@@ -255,7 +236,6 @@ function batsell.wakeup(widget)
     local environment = system.getVersion()
 
     newmAh = getSensorValue()
-
 
     -- Detect if mAh sensor has changed since the last loop.  If it has, update it and calculate new percentage.
     if widget.Data.currentmAh ~= newmAh then

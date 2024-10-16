@@ -3,7 +3,6 @@ local config = {}
 config.widgetName = "Battery Select"				    -- name of the tool
 config.widgetDir = "/scripts/BattSelector/"				-- base path the script is installed into
 config.useCompiler = false								-- enable or disable compilation
-config.useDebug = false                                 -- enable or disable debug mode
 
 compile = assert(loadfile(config.widgetDir .. "compile.lua"))(config)
 
