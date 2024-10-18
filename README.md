@@ -28,4 +28,4 @@ Easiest method for install is to download the .zip from the latest Release and u
 
 ### Version History
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
-
+  - Version 1.1 - Small Update.  Fixed/improved mAh sensor detection.
