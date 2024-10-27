@@ -5,7 +5,18 @@ batsell = {}
 local choiceField
 local sensor
 
-local useDebug = false
+-- Set to true to enable debug output for each function
+local useDebug = {
+    fillBatteryPanel = false,
+    updateRemainingSensor = false,
+    getSensorValue = false,
+    create = false,
+    build = false,
+    paint = false,
+    wakeup = false,
+    configure = false
+}
+
 
 -- local functions
 local function fillBatteryPanel(batteryPanel, widget)
@@ -35,36 +46,64 @@ local function fillBatteryPanel(batteryPanel, widget)
     end
 end
 
+
 local function updateRemainingSensor(widget)
     local sensor = system.getSource({category=CATEGORY_TELEMETRY, appId=0x4402})
     if sensor == nil then
-        -- if sensor does not already exist, make it
-    sensor = model.createSensor()
-    if sensor == nil then
-        return -- in case there is no room for an extra sensor!
-    end
+        if useDebug then
+            print("% Remaining sensor not found, creating...")
+        end
+    -- if sensor does not already exist, make it
+        sensor = model.createSensor()
+        if sensor == nil then
+            if useDebug then
+            print("Unable to create sensor")
+            end
+            return -- in case there is no room for another sensor, exit
+        end
     sensor:name("Remaining")
     sensor:unit(UNIT_PERCENT)
     sensor:decimals(0)
     sensor:appId(0x4402)
     sensor:physId(0x10)
     end
+    -- Write current % remaining to the % sensor
     sensor:value(widget.Data.currentPercent)
+
+    if useDebug.updateRemainingSensor then
+        if sensor:value() ~= nil then
+            print("Debug(updateRemainingSensor): Remaining: " .. sensor:value() .. "%")
+        end
+    end
 end
 
+
 local function getSensorValue()
-   if sensor == nil then
+    if sensor == nil then
         for member = 0, 25 do
             local candidate = system.getSource({category=CATEGORY_TELEMETRY_SENSOR, member=member})
             if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
                 sensor = candidate
+                if useDebug.getSensorValue then
+                    print("mAh Sensor Found: " .. (tostring(sensor)))
+                end
                 break -- Exit the loop once a valid mAh sensor is found
             end
         end
 	else
-		return sensor:value()
+        if sensor:value() ~= nil then
+            if useDebug.getSensorValue then
+                if sensor:value() ~= nil then
+                print("Debug(getSensorValue): mAh Reading: " .. math.floor(sensor:value()) .. "mAh")
+                end
+            end
+		    return math.floor(sensor:value())
+        else
+            return 0
+        end
     end
 end
+
 
 -- This function is called when the widget is first created and returns the default configuration data
 function batsell.create(widget)
@@ -76,13 +115,12 @@ function batsell.create(widget)
             ["mAhSensor"] = nil,
             ["defaultBattery"] = 3,
             ["lastBattery"] = 1,
-            ["selectedBattery"] = 1,
-            ["DisplayPercent"] = true
+            ["selectedBattery"] = 1
         },
 
         Batteries = { -- Set mAh Values for Default Batteries
-            ["Battery 1"] = 0,
-            ["Battery 2"] = 0
+            ["Battery 1"] = 4000,
+            ["Battery 2"] = 5000
         },
         
         Data = {
@@ -94,155 +132,60 @@ end
 
 
 function batsell.build(widget)
-    local Batteries = {}
-    -- Create table for possible Battery Sizes
-    for i = 1, widget.Config.numBatts do
-        Batteries[i] = {widget.Batteries["Battery " .. i] .. "mAh", i }
+    local w, h = lcd.getWindowSize()
+    local pos_x 
+    local pos_y
+    
+    -- Get Radio Version to determine field size
+    local radio = system.getVersion()
+
+    -- Set form size based on radio type
+    if string.find(radio.board, "X20") then
+        fieldHeight = 40
+        fieldWidth = 145
+    elseif string.find(radio.board, "X18") then
+        fieldHeight = 30
+        fieldWidth = 100
+    else
+        -- Currently not tested on other radios (X10,X12,X14)
+        -- So right now just using X18 numbers
+        fieldHeight = 30
+        fieldWidth = 100
     end
 
-    local w, h = lcd.getWindowSize()
-    lcd.font(FONT_XL)
-	local tsizeW_pc, tsizeH_pc = lcd.getTextSize("%") -- grabbing this as diff font size and need as offset for flight battery
+    if widget.Config.numBatts > 0 then
+        local pos_x = (w / 2 - fieldWidth / 2)
+        local pos_y = (h / 2 - fieldHeight / 2)
 
-
-    lcd.color(lcd.RGB(255,255,255))
-	local str_fb = "Flight Battery"
-	local tsizeW_fb
-	local tsizeH_fb
-	local cHeight = 40
-	local offset = 0
-
-	if h >= 150 then
-
-		lcd.font(FONT_STD)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = (h / 2) - 40 / 2	
-		offset = 0
-		
-	elseif h >= 100 and h < 150 then
-
-		lcd.font(FONT_STD)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = ((h / 2) - 40 / 2) + 40/2
-		offset = 0
-	
-	elseif h >= 65 and h < 100 then	
-
-		lcd.font(FONT_S)	
-		tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		s_x = (w / 2) - tsizeW_fb + tsizeW_pc
-		s_y = ((h / 2) - 40 / 2) + 40/2
-		cHeight = 30
-		if h < 85 then 
-			offset = 10
-		else
-			offset = 0
-		end
-		
-	else
-		-- to small
-		
-	end	
-
-	if tsizeW_fb ~= nil then
-		form.create()
-		choiceField = form.addChoiceField(line, {x=s_x - tsizeW_fb, y=s_y-offset, w=tsizeW_fb * 2, h=cHeight}, Batteries, function() return widget.Config.selectedBattery end, function(value) 
-		widget.Config.selectedBattery = value
-		widget.Config.lastBattery = value
-		end)
-	end
+        -- Create table for Battery Sizes to display in choice field
+        local Batteries = {}
+        for i = 1, widget.Config.numBatts do
+            Batteries[i] = {widget.Batteries["Battery " .. i] .. "mAh", i }
+        end
+            -- Create form and add choice field for selecting battery
+        form.create()
+        choiceField = form.addChoiceField(line, {x=pos_x, y=pos_y, w=fieldWidth, h=fieldHeight}, Batteries, function() return widget.Config.selectedBattery end, function(value) 
+        widget.Config.selectedBattery = value
+        widget.Config.lastBattery = value
+        end)
+    end
 end
 
 function batsell.paint(widget)
-    local w, h = lcd.getWindowSize()
-
-    lcd.color(lcd.RGB(255,255,255))
-
-	local tsizeW_pc, tsizeH_pc = lcd.getTextSize("% ") -- grabbing this as diff font size and need as offset for flight battery
-
-    if widget.Data.currentPercent ~= nil then
-        if widget.Config.DisplayPercent then
-		
-
-			
-			if h >= 150 then	
-				--display percent below selector
-				lcd.font(FONT_XL)
-				local str_p = widget.Data.currentPercent .. "%"
-				local tsizeW_p, tsizeH_p = lcd.getTextSize(str_p)				
-				lcd.drawText((w / 2) - tsizeW_p / 2, ((h / 2) - 40 / 2) + 40, str_p)  
-				lcd.font(FONT_STD)					
-			elseif h >= 100 and h < 150 then
-				--display percent to side of selector
-				lcd.font(FONT_L)
-				local str_p = widget.Data.currentPercent .. "%"
-				local tsizeW_p, tsizeH_p = lcd.getTextSize(str_p)				
-				lcd.drawText(((w / 3) - tsizeW_p / 2) + tsizeW_p * 2 , ((h / 2) - tsizeH_p / 2), str_p)
-				lcd.font(FONT_STD)				
-			elseif h >= 65 and h < 100 then
-				--display percent to side of selector
-				lcd.font(FONT_L)
-				local str_p = widget.Data.currentPercent .. "%"
-				local tsizeW_p, tsizeH_p = lcd.getTextSize(str_p)				
-				lcd.drawText(((w / 3) - tsizeW_p / 2) + tsizeW_p * 2 , ((h / 2) - tsizeH_p / 2), str_p)
-				lcd.font(FONT_STD)				
-			else
-				-- dont show as will be to small
-			end
-		end
-    end
-	
-
-
-	local str_fb = "Flight Battery"
-	lcd.color(lcd.RGB(255,255,255))	
-	
-	if h >= 150 then
-	
-		lcd.font(FONT_STD)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 20 -  (tsizeH_fb/4) , str_fb) 
-		
-	elseif h >= 100 and h < 150 then
-	
-		lcd.font(FONT_STD)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2	
-		local offset_fb = - tsizeH_fb * 2
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 10 , str_fb) 	
-		
-	elseif h >= 65 and h < 100 then	
-	
-		offset = 10
-		lcd.font(FONT_S)
-		local tsizeW_fb, tsizeH_fb = lcd.getTextSize(str_fb)	
-		local offset_fb = - tsizeH_fb * 2	
-		local offset_fb = - tsizeH_fb * 2 
-		lcd.drawText((w / 2) - tsizeW_fb + tsizeW_pc, (h / 2) - 40 / 2 - 10 , str_fb) 
-		
-	else
-		-- hide as too small
-	end
+    -- Idk if this is needed since I'm not drawing anything on the LCD but I'm leaving it here for now
 end
 
 function batsell.wakeup(widget)
     local newmAh = nil
     local newPercent = nil
-
-    -- Check if Lua is running in a simulator.  
-    local environment = system.getVersion()
-
-    newmAh = getSensorValue()
+    local newmAh = getSensorValue()
 
     -- Detect if mAh sensor has changed since the last loop.  If it has, update it and calculate new percentage.
     if widget.Data.currentmAh ~= newmAh then
 	
         widget.Data.currentmAh = newmAh
 
-        usablemAh = math.floor(widget.Batteries["Battery " .. widget.Config.selectedBattery] * (widget.Config.flyTo / 100))
+        usablemAh = math.floor(widget.Batteries["Battery " .. tonumber(widget.Config.selectedBattery)] * (widget.Config.flyTo / 100))
 		
         newPercent = 100 - math.floor((newmAh / usablemAh) * 100)
             if newPercent < 0 then
@@ -289,12 +232,6 @@ function batsell.configure(widget)
     local field = form.addNumberField(line, nil, 50, 100, function() return widget.Config.flyTo end, function(value) widget.Config.flyTo = value end)
     field:suffix("%")
     field:default(80)
-
-    -- Create field for displaying % on widget screen
-    local displayPercent = nil
-    local line = form.addLine("Display % On Widget")
-    local field = form.addBooleanField(line, nil, function() return widget.Config.DisplayPercent end, function(value) widget.Config.DisplayPercent = value end)
-
 end
 
 -- Read configuration from storage
@@ -347,13 +284,10 @@ function batsell.write(widget)
         end
         storage.write("Battery" .. i, widget.Batteries["Battery " .. i])
     end
-
     storage.write("defaultBattery", widget.Config.defaultBattery)
     storage.write("lastBattery", widget.Config.lastBattery)
     storage.write("selectedBattery", widget.Config.selectedBattery)
     storage.write("DisplayPercent", widget.Config.DisplayPercent)
-
-
 end
 
 function batsell.event(widget, category, value, x, y)
