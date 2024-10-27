@@ -8,8 +8,8 @@ local sensor
 -- Set to true to enable debug output for each function
 local useDebug = {
     fillBatteryPanel = false,
-    updateRemainingSensor = true,
-    getSensorValue = true,
+    updateRemainingSensor = false,
+    getSensorValue = false,
     create = false,
     build = false,
     paint = false,
@@ -84,7 +84,7 @@ local function getSensorValue()
             local candidate = system.getSource({category=CATEGORY_TELEMETRY_SENSOR, member=member})
             if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
                 sensor = candidate
-                if useDebug then
+                if useDebug.getSensorValue then
                     print("mAh Sensor Found: " .. (tostring(sensor)))
                 end
                 break -- Exit the loop once a valid mAh sensor is found
@@ -185,7 +185,7 @@ function batsell.wakeup(widget)
 	
         widget.Data.currentmAh = newmAh
 
-        usablemAh = math.floor(widget.Batteries["Battery " .. widget.Config.selectedBattery] * (widget.Config.flyTo / 100))
+        usablemAh = math.floor(widget.Batteries["Battery " .. tonumber(widget.Config.selectedBattery)] * (widget.Config.flyTo / 100))
 		
         newPercent = 100 - math.floor((newmAh / usablemAh) * 100)
             if newPercent < 0 then
