@@ -1,9 +1,12 @@
 # BattSelector
 Battery selection widget for FrSky Ethos.  Requires Ethos Version 1.5.10 or higher.<br>
 Perfect for flying multiple size batteries on a single model, or multiple aircraft on a single model file. Or Both.
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Demo.gif?raw=true)
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Select.png?raw=true)
 
 ## Installation
 Easiest method for install is to download the .zip from the latest Release and use Ethos Suite's Lua Development Tools menu to install it.<br>
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Installer.png?raw=true)
 
 ## Features
   - On-Screen Widget-Based Battery Selection - No need to navigate menus to set flight battery<br>
@@ -14,7 +17,10 @@ Easiest method for install is to download the .zip from the latest Release and u
   - Set Default Battery to either one of your configured sizes or "Last Used"<br>
   - Set "Use Capacity" Percentage for LiPo Protection
 
+
 ## Settings/Configuration
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Configure.png?raw=true)
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Configure%20Batteries.png?raw=true)
   - Number Of Batteries: 1 to 5 Different Battery Sizes<br>
   - Battery N: Set LiPo _Rated_ Capacity Here<br>
   - Default: Set to a specific battery if you want it to always default to that, or set to Last Used to default to whatever you used last time<br>
@@ -29,3 +35,4 @@ Easiest method for install is to download the .zip from the latest Release and u
 ### Version History
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
   - Version 1.1 - Small Update.  Fixed/improved mAh sensor detection.
+  - Version 1.2 - Removed % Display from Widget due to complications with Lua Forms.  Improved compatibility with Ethos 1.5.18
