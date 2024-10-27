@@ -10,7 +10,7 @@ Easiest method for install is to download the .zip from the latest Release and u
 
 ## Features
   - On-Screen Widget-Based Battery Selection - No need to navigate menus to set flight battery<br>
-  - Automatically detects mAh (Consumption) sensor from any source (including calculated sensors from Current*Volt) and uses it for calculations
+  - Automatically detects mAh (Consumption) sensor from any source (including calculated sensors from Current) and uses it for calculations
   - Calculates Remaining Percentage automatically based on battery size<br>
   - Creates and updates "Remaining" Percentage Telemetry Sensor for use in Logic Switches and Alarms<br>
   - Set up to 5 Battery Sizes, from 0 to 10,000mAh<br>
