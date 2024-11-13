@@ -28,22 +28,6 @@ local function fillBatteryPanel(batteryPanel, widget)
         field:default(0)
         field:step(100)
     end
-
-    -- Create table for Default Battery Options and add Last Used as an option
-    local defaultOptions = {}
-    for i = 1, widget.Config.numBatts do
-        defaultOptions[i] = { "Battery " .. i, i }
-    end
-    -- Add Last Used as an option
-    defaultOptions[widget.Config.numBatts + 1] = { "Last Used", widget.Config.numBatts + 1 }
-    local line = batteryPanel:addLine("Default")
-    local field = form.addChoiceField(line, nil,  defaultOptions, function() return widget.Config.defaultBattery end, function(value) widget.Config.defaultBattery = value end)
-
-    -- If you reduce the nunber of batteries by more than 1 (e.g. from 3 to 1), the configured default battery may be invalid.
-    -- This sets the default to last used (numBatts + 1) if so to prevent that.
-    if widget.Config.defaultBattery > widget.Config.numBatts + 1 then
-        widget.Config.defaultBattery = widget.Config.numBatts + 1
-    end
 end
 
 
