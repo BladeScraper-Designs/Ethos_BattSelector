@@ -4,12 +4,11 @@ batsell = {}
 
 -- Set to true to enable debug output for each function
 local useDebug = {
-    getModelID =            false,
     fillBatteryPanel =      false,
     updateRemainingSensor = false,
     getmAh =                false,
     create =                false,
-    build =                 false,
+    build =                 true,
     paint =                 false,
     wakeup =                false,
     configure =             false,
@@ -20,6 +19,7 @@ local modelID
 local numBatts
 local flyTo
 local Batteries = {}
+local Favorites = {}
 
 
 -- Battery Panel in Configure
@@ -29,6 +29,11 @@ local function fillBatteryPanel(batteryPanel, widget)
     local pos_Battery_Text = {x=10, y=8, w=200, h=40}
     local pos_Capacity_Text = {x=530, y=8, w=100, h=40}
     local pos_ModelID_Text = {x=655, y=8, w=100, h=40}
+    -- Value positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+    local pos_Name_Value = {x=8, y=8, w=400, h=40}
+    local pos_Capacity_Value = {x=504, y=8, w=130, h=40}
+    local pos_ModelID_Value = {x=642, y=8, w=50, h=40}
+    local pos_Delete_Button = {x=700, y=8, w=50, h=40}
 
     local line = batteryPanel:addLine("")
 
@@ -44,46 +49,39 @@ local function fillBatteryPanel(batteryPanel, widget)
 
     -- Battery List
         for i = 1, numBatts do
-        -- Value positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
-        local pos_Name_Value = {x=8, y=8, w=400, h=40}
-        local pos_Capacity_Value = {x=504, y=8, w=130, h=40}
-        local pos_ModelID_Value = {x=642, y=8, w=50, h=40}
-        local pos_Delete_Button = {x=700, y=8, w=50, h=40}
+            local line = batteryPanel:addLine("")
+                
+            -- Create Name field
+            local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName) Batteries[i].name = newName end)
+            -- Create Capacity field
+            local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value) Batteries[i].capacity = value end)
+            field:suffix("mAh")
+            field:step(100)
 
-        local line = batteryPanel:addLine("")
+            -- Create a Model ID field for each battery
+            local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value) Batteries[i].modelID = value end)
+            field:default(0)
             
-        -- Create Capacity field for each Battery
-        -- I can't get the addTextField below to work so disabling it for now to keep working on the rest of the script
-        local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName) Batteries[i].name = newName end)
-
-        local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value) Batteries[i].capacity = value end)
-        field:suffix("mAh")
-        field:step(100)
-
-        -- Create a Model ID field for each battery
-        local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value) Batteries[i].modelID = value end)
-        field:default(0)
-        
-        -- Create a delete button for each battery and if pressed, create a dialog to confirm deletion
-        local field = form.addTextButton(line, pos_Delete_Button, "X", function()
-            local buttons = {
-                {label="Yes", action=function()
-                    table.remove(Batteries, i)
-                    numBatts = numBatts - 1
-                    batteryPanel:clear()
-                    fillBatteryPanel(batteryPanel, widget)
-                    return true
-                end},
-                {label="No", action=function() return true end}
-            }
-            form.openDialog({
-                title="Confirm Delete",
-                message="Delete Battery " .. i .. "?",
-                width=300,
-                buttons=buttons,
-                options=TEXT_LEFT,
-            })
-        end)
+            -- Create a delete button for each battery and if pressed, create a dialog to confirm deletion
+            local field = form.addTextButton(line, pos_Delete_Button, "X", function()
+                local buttons = {
+                    {label="Yes", action=function()
+                        table.remove(Batteries, i)
+                        numBatts = numBatts - 1
+                        batteryPanel:clear()
+                        fillBatteryPanel(batteryPanel, widget)
+                        return true
+                    end},
+                    {label="No", action=function() return true end}
+                }
+                form.openDialog({
+                    title="Confirm Delete",
+                    message="Delete Battery " .. i .. "?",
+                    width=300,
+                    buttons=buttons,
+                    options=TEXT_LEFT,
+                })
+            end)
     end
 
     -- "Add New" button.  Eventually I'll do math for different radios but for now I'm just hardcoding.
@@ -98,6 +96,56 @@ local function fillBatteryPanel(batteryPanel, widget)
         table.remove(Batteries, #Batteries)
     end
 end
+
+-- Favorites Panel in Configure
+local function fillFavoritesPanel(favoritesPanel, widget)
+    -- Favorites Panel Header
+    -- Header text positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+    local pos_ModelID_Text = {x=10, y=8, w=200, h=40}
+    local pos_Favorite_Text = {x=530, y=8, w=100, h=40}
+    -- Value positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+    local pos_ModelID_Value = {x=8, y=8, w=400, h=40}
+    local pos_Favorite_Value = {x=350, y=8, w=400, h=40}
+    local pos_Delete_Button = {x=700, y=8, w=50, h=40}
+
+    local line = favoritesPanel:addLine("")
+
+    -- Create header for the battery panel
+    local field = form.addStaticText(line, pos_ModelID_Text, "ID")
+    local field = form.addStaticText(line, pos_Favorite_Text, "Favorite")
+
+    -- Create a list of unique Model IDs
+    local IDs = {}
+    local uniqueIDs = {}
+
+    for i = 1, #Batteries do
+        local id = Batteries[i].modelID
+        if not uniqueIDs[id] then
+            uniqueIDs[id] = true
+            table.insert(IDs, id)
+        end
+    end
+
+    -- List out available Model IDs in the Favorites panel
+    for i = 1, #IDs do
+        local line = favoritesPanel:addLine("")
+        local id = IDs[i]
+
+        -- Create Model ID field
+        local field = form.addStaticText(line, pos_ModelID_Value, id)
+
+        -- Create Favorite picker field
+        local matchingNames = {}
+        for j = 1, #Batteries do
+            if Batteries[j].modelID == id then
+                matchingNames[#matchingNames + 1] = { Batteries[j].name, j }
+            end
+        end
+        local field = form.addChoiceField(line, pos_Favorite_Value, matchingNames, function() return Favorites[id] end, function(value) Favorites[id] = value end)
+    end
+    
+end
+
 
 -- Alerts Panel, commented out for now as not in use
 -- local function fillAlertsPanel(alertsPanel, widget)
@@ -236,7 +284,13 @@ function batsell.build(widget)
         end
 
         if not isValid then
-            selectedBattery = matchingBatteries[1] and matchingBatteries[1][2] or 1
+            -- Use favorite if available, otherwise use the first matching battery
+            local favoriteBattery = Favorites[modelID]
+            if favoriteBattery then
+                selectedBattery = favoriteBattery
+            else
+                selectedBattery = matchingBatteries[1] and matchingBatteries[1][2] or 1
+            end
         end
 
         choiceField = form.addChoiceField(line, {x=pos_x, y=pos_y, w=fieldWidth, h=fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) selectedBattery = value end)
@@ -326,6 +380,11 @@ function batsell.configure(widget)
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
     fillBatteryPanel(batteryPanel, widget)
+    
+    local favoritesPanel
+    favoritesPanel = form.addExpansionPanel("Favorites")
+    favoritesPanel:open(false)
+    fillFavoritesPanel(favoritesPanel, widget)
    
     -- Create field for entering desired "fly-to" percentage (80% typical)
     if flyTo == nil then
@@ -345,18 +404,30 @@ end
 
 -- Read configuration from storage
 function batsell.read(widget)
-    numBatts = storage.read("numBatts")
-    flyTo = storage.read("flyTo")
+    numBatts = storage.read("numBatts") or 0
+    flyTo = storage.read("flyTo") or 80
     Batteries = {}
-    if numBatts ~= nil then
+    if numBatts > 0 then
         for i = 1, numBatts do
-            local name = storage.read("Battery" .. i .. "_name")
-            local capacity = storage.read("Battery" .. i .. "_capacity")
-            local modelID = storage.read("Battery" .. i .. "_modelID")
-            Batteries[i] = {name = name or "", capacity = capacity or 0, modelID = modelID or 0}
+            local name = storage.read("Battery" .. i .. "_name") or ""
+            local capacity = storage.read("Battery" .. i .. "_capacity") or 0
+            local modelID = storage.read("Battery" .. i .. "_modelID") or 0
+            Batteries[i] = {name = name, capacity = capacity, modelID = modelID}
         end
     end
-    selectedBattery = storage.read("selectedBattery")
+    selectedBattery = storage.read("selectedBattery") or 1
+
+    -- Read Favorites from storage
+    Favorites = {}
+    local favoriteIDs = storage.read("favoriteIDs")
+    if favoriteIDs then
+        for _, id in ipairs(favoriteIDs) do
+            local favorite = storage.read("Favorite_" .. id)
+            if favorite then
+                Favorites[id] = favorite
+            end
+        end
+    end
 end
 
 
@@ -364,7 +435,7 @@ end
 function batsell.write(widget)
     storage.write("numBatts", numBatts)
     storage.write("flyTo", flyTo)
-    if numBatts ~= nil then
+    if numBatts > 0 then
         for i = 1, numBatts do
             storage.write("Battery" .. i .. "_name", Batteries[i].name)
             storage.write("Battery" .. i .. "_capacity", Batteries[i].capacity)
@@ -372,6 +443,13 @@ function batsell.write(widget)
         end
     end
     storage.write("selectedBattery", selectedBattery)
+
+    -- Write Favorites to storage
+    for i = 0, 99 do
+        if Favorites[i] then
+            storage.write("Favorite_" .. i, Favorites[i])
+        end
+    end
 end
 
 function batsell.event(widget, category, value, x, y) 
