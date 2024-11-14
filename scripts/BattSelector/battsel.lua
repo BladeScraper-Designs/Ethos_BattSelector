@@ -1,34 +1,107 @@
 -- Lua Battery Selector and Alarm widget
--- Written by Keith Williams
-batsell = {}
 
-local choiceField
-local sensor
+batsell = {}
 
 -- Set to true to enable debug output for each function
 local useDebug = {
-    fillBatteryPanel = false,
+    getModelID =            false,
+    fillBatteryPanel =      false,
     updateRemainingSensor = false,
-    getSensorValue = false,
-    create = false,
-    build = false,
-    paint = false,
-    wakeup = false,
-    configure = false
+    getmAh =                false,
+    create =                false,
+    build =                 false,
+    paint =                 false,
+    wakeup =                false,
+    configure =             false,
 }
 
+local sensor
+local modelID
+local numBatts
+local flyTo
+local Batteries = {}
 
--- local functions
+
+-- Battery Panel in Configure
 local function fillBatteryPanel(batteryPanel, widget)
-    -- Create a line for each Battery Size 
-    for i = 1, widget.Config.numBatts do
+    -- Battery Panel Header
+    -- Header text positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+    local pos_Battery_Text = {x=10, y=8, w=200, h=40}
+    local pos_Capacity_Text = {x=530, y=8, w=100, h=40}
+    local pos_ModelID_Text = {x=655, y=8, w=100, h=40}
+
+    local line = batteryPanel:addLine("")
+
+    -- Create header for the battery panel
+    local field = form.addStaticText(line, pos_Battery_Text, "Battery")
+    local field = form.addStaticText(line, pos_Capacity_Text, "Capacity")
+    local field = form.addStaticText(line, pos_ModelID_Text, "ID")
+
+    -- Ensure numBatts is not nil
+    if numBatts == nil then
+        numBatts = 0
+    end
+
+    -- Battery List
+        for i = 1, numBatts do
+        -- Value positions.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+        local pos_Name_Value = {x=8, y=8, w=400, h=40}
+        local pos_Capacity_Value = {x=504, y=8, w=130, h=40}
+        local pos_ModelID_Value = {x=642, y=8, w=50, h=40}
+        local pos_Delete_Button = {x=700, y=8, w=50, h=40}
+
         local line = batteryPanel:addLine("Battery " .. i)
-        local field = form.addNumberField(line, nil, 0, 20000, function() return widget.Batteries["Battery " .. i] end, function(value) widget.Batteries["Battery " .. i] = value end)
+            
+        -- Create Capacity field for each Battery
+        -- I can't get the addTextField below to work so disabling it for now to keep working on the rest of the script
+        -- local field = form.addTextField(line, pos_Name_Value, function() return text end, function(newValue) text = newValue end)
+        local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value) Batteries[i].capacity = value end)
         field:suffix("mAh")
-        field:default(0)
         field:step(100)
+
+        -- Create a Model ID field for each battery
+        local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value) Batteries[i].modelID = value end)
+        field:default(0)
+        
+        -- Create a delete button for each battery and if pressed, create a dialog to confirm deletion
+        local field = form.addTextButton(line, pos_Delete_Button, "X", function()
+            local buttons = {
+                {label="Yes", action=function()
+                    table.remove(Batteries, i)
+                    numBatts = numBatts - 1
+                    batteryPanel:clear()
+                    fillBatteryPanel(batteryPanel, widget)
+                    return true
+                end},
+                {label="No", action=function() return true end}
+            }
+            form.openDialog({
+                title="Confirm Delete",
+                message="Delete Battery " .. i .. "?",
+                width=300,
+                buttons=buttons,
+                options=TEXT_LEFT,
+            })
+        end)
+    end
+
+    -- "Add New" button.  Eventually I'll do math for different radios but for now I'm just hardcoding.
+    local pos_Add_Button = {x=642, y=8, w=108, h=40}
+    local line = batteryPanel:addLine("")
+    local field = form.addTextButton(line, pos_Add_Button, "Add New",  function() numBatts = numBatts + 1 batteryPanel:clear() fillBatteryPanel(batteryPanel, widget) end)
+
+    -- Ensure that Batteries table entries matches numBatts always
+    if numBatts > #Batteries then
+        Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
+    elseif numBatts < #Batteries then
+        table.remove(Batteries, #Batteries)
     end
 end
+
+-- Alerts Panel, commented out for now as not in use
+-- local function fillAlertsPanel(alertsPanel, widget)
+--     local line = alertsPanel:addLine("Eventually")
+-- end
 
 
 local function updateRemainingSensor(widget)
@@ -52,68 +125,56 @@ local function updateRemainingSensor(widget)
     sensor:physId(0x10)
     end
     -- Write current % remaining to the % sensor
-    sensor:value(widget.Data.currentPercent)
+    sensor:value(currentPercent)
 
     if useDebug.updateRemainingSensor then
         if sensor:value() ~= nil then
-            print("Debug(updateRemainingSensor): Remaining: " .. sensor:value() .. "%")
+            print("Debug(updateRemainingSensor): Remaining: " .. math.floor(sensor:value()) .. "%")
         end
     end
 end
 
 
-local function getSensorValue()
-    if sensor == nil then
-        for member = 0, 25 do
-            local candidate = system.getSource({category=CATEGORY_TELEMETRY_SENSOR, member=member})
+local function getmAh()
+    local mAhSensor
+
+    -- Debug: Check each sensor to see if it matches the required unit
+    for member = 0, 25 do
+        local candidate = system.getSource({category=CATEGORY_TELEMETRY_SENSOR, member=member})
+        
+        if candidate then
             if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
-                sensor = candidate
-                if useDebug.getSensorValue then
-                    print("mAh Sensor Found: " .. (tostring(sensor)))
-                end
+                mAhSensor = candidate
                 break -- Exit the loop once a valid mAh sensor is found
             end
         end
-	else
-        if sensor:value() ~= nil then
-            if useDebug.getSensorValue then
-                if sensor:value() ~= nil then
-                print("Debug(getSensorValue): mAh Reading: " .. math.floor(sensor:value()) .. "mAh")
-                end
-            end
-		    return math.floor(sensor:value())
-        else
-            return 0
+    end
+
+    -- Return the value or 0 if no valid sensor was found
+    if mAhSensor and mAhSensor:value() ~= nil then
+        if useDebug.getmAh then
+            print("Debug(getmAh): mAh Reading: " .. math.floor(mAhSensor:value()) .. "mAh")
         end
+        return math.floor(mAhSensor:value())
+    else
+        if useDebug.getmAh then
+        print("Debug(getmAh): No valid mAh sensor found or value is nil.")
+        end
+        return 0
     end
 end
 
 
--- This function is called when the widget is first created and returns the default configuration data
+
+-- This function is called when the widget is first created
 function batsell.create(widget)
-
-    return {
-        Config = { -- Set Default Configuration Data
-            ["numBatts"] = 2, 
-            ["flyTo"] = 80, 
-            ["mAhSensor"] = nil,
-            ["defaultBattery"] = 3,
-            ["lastBattery"] = 1,
-            ["selectedBattery"] = 1
-        },
-
-        Batteries = { -- Set mAh Values for Default Batteries
-            ["Battery 1"] = 4000,
-            ["Battery 2"] = 5000
-        },
-        
-        Data = {
-            ["currentmAh"] = nil,
-            ["currentPercent"] = nil
-        }
-    }
+    return
 end
 
+
+local matchingBatteries = {}
+local formCreated = false
+local selectedBattery
 
 function batsell.build(widget)
     local w, h = lcd.getWindowSize()
@@ -137,21 +198,50 @@ function batsell.build(widget)
         fieldWidth = 100
     end
 
-    if widget.Config.numBatts > 0 then
+    -- Get the current Model ID
+    sensor = system.getSource({category=CATEGORY_TELEMETRY, name="Model ID"})
+    if sensor:value() ~= nil then
+        modelID = math.floor(sensor:value())
+    else
+        return
+    end
+
+    matchingBatteries = {}
+    if #Batteries > 0 and sensor:value() ~= nil then
         local pos_x = (w / 2 - fieldWidth / 2)
         local pos_y = (h / 2 - fieldHeight / 2)
 
-        -- Create table for Battery Sizes to display in choice field
-        local Batteries = {}
-        for i = 1, widget.Config.numBatts do
-            Batteries[i] = {widget.Batteries["Battery " .. i] .. "mAh", i }
+        for i = 1, #Batteries do
+            if Batteries[i].modelID == modelID then
+                matchingBatteries[#matchingBatteries + 1] = { Batteries[i].capacity .. "mAh", i }
+            end
         end
-            -- Create form and add choice field for selecting battery
+
+        if useDebug.build then
+            print("Debug(build): Current Model ID: " .. modelID .. ". Matching Batteries: " .. #matchingBatteries)
+        end
+
+        -- Create form and add choice field for selecting battery
+        local choiceField
         form.create()
-        choiceField = form.addChoiceField(line, {x=pos_x, y=pos_y, w=fieldWidth, h=fieldHeight}, Batteries, function() return widget.Config.selectedBattery end, function(value) 
-        widget.Config.selectedBattery = value
-        widget.Config.lastBattery = value
-        end)
+        
+        -- Ensure selectedBattery is valid
+        local isValid = false
+        for _, battery in ipairs(matchingBatteries) do
+            if battery[2] == selectedBattery then
+                isValid = true
+                break
+            end
+        end
+
+        if not isValid then
+            selectedBattery = matchingBatteries[1] and matchingBatteries[1][2] or 1
+        end
+
+        choiceField = form.addChoiceField(line, {x=pos_x, y=pos_y, w=fieldWidth, h=fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) selectedBattery = value end)
+        
+        -- Set the formCreated flag to true once it's created the first time
+        formCreated = true
     end
 end
 
@@ -159,125 +249,130 @@ function batsell.paint(widget)
     -- Idk if this is needed since I'm not drawing anything on the LCD but I'm leaving it here for now
 end
 
+local lastMillisUpdate = 0
+local lastMillisBuild = 0
+
 function batsell.wakeup(widget)
-    local newmAh = nil
-    local newPercent = nil
-    local newmAh = getSensorValue()
+    local newmAh = getmAh()
+    
+    if numBatts > 0 and newmAh ~= nil then
+        -- Ensure selectedBattery is valid
+        if selectedBattery == nil or not Batteries[selectedBattery] then
+            selectedBattery = 1
+        end
 
-    -- Detect if mAh sensor has changed since the last loop.  If it has, update it and calculate new percentage.
-    if widget.Data.currentmAh ~= newmAh then
-	
-        widget.Data.currentmAh = newmAh
-
-        usablemAh = math.floor(widget.Batteries["Battery " .. tonumber(widget.Config.selectedBattery)] * (widget.Config.flyTo / 100))
-		
-        newPercent = 100 - math.floor((newmAh / usablemAh) * 100)
+        -- Detect if mAh sensor has changed since the last loop. If it has, update it and calculate new percentage.
+        if currentmAh ~= newmAh then
+            currentmAh = newmAh
+            usablemAh = math.floor(Batteries[selectedBattery].capacity * (flyTo / 100))
+            
+            newPercent = 100 - math.floor((newmAh / usablemAh) * 100)
             if newPercent < 0 then
                 newPercent = 0
             end
-        
-        -- If the new percentage is different from the current percentage, refresh widget
-        if widget.Data.currentPercent ~= newPercent then
-            widget.Data.currentPercent = newPercent
-            lcd.invalidate()
+            
+            -- If the new percentage is different from the current percentage, refresh widget
+            if currentPercent ~= newPercent then
+                currentPercent = newPercent
+                lcd.invalidate()
+            end
         end
 
-    end
+        local millis = os.clock()
+        if (millis - lastMillisUpdate) >= 1.0 then
+            updateRemainingSensor(widget)
+            lastMillisUpdate = millis
+        end
 
-    -- Recheck and update % Remaining Sensor every 1s
-    local millis = os.clock()
-    if (millis - (widget.lastMillis or 0)) >= 1.0 then
-        updateRemainingSensor(widget)
-        widget.lastMillis = millis
+        -- Check if the form has been built yet
+        local sensor = system.getSource({category=CATEGORY_TELEMETRY, name="Model ID"})
+        local currentModelID = sensor and sensor:value() and math.floor(sensor:value()) or nil
+
+        if not formCreated then
+            -- If not, build it as soon as sensor:value() is not nil
+            if currentModelID ~= nil then
+                batsell.build(widget)
+                lastModelID = currentModelID
+            end
+        else
+            -- Rebuild the form if the model ID has changed
+            if currentModelID ~= lastModelID then
+                batsell.build(widget)
+                lastModelID = currentModelID
+            end
+
+            local previousMatchingBatteries = #matchingBatteries
+            local newMatchingBatteries = 0
+            for i = 1, #Batteries do
+                if Batteries[i].modelID == currentModelID then
+                    newMatchingBatteries = newMatchingBatteries + 1
+                end
+            end
+
+            if newMatchingBatteries ~= previousMatchingBatteries then
+                batsell.build(widget)
+            end
+        end
     end
 end
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 function batsell.configure(widget)
-
-
 	doneConfigure = true
-    -- Create field for choosing the number of batteries
-    local line = form.addLine("Number of Batteries")
-    local batteryPanel
-    local field = form.addNumberField(line, nil, 1, 5, function() return widget.Config.numBatts end, function(value)
-        widget.Config.numBatts = value
-        batteryPanel:clear()
-        fillBatteryPanel(batteryPanel, widget)
-    end)
 
     -- Create Batteries expansion panel
+    local batteryPane
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
     fillBatteryPanel(batteryPanel, widget)
    
     -- Create field for entering desired "fly-to" percentage (80% typical)
+    if flyTo == nil then
+        flyTo = 80
+    end
     local line  = form.addLine("Use Capacity") 
-    local field = form.addNumberField(line, nil, 50, 100, function() return widget.Config.flyTo end, function(value) widget.Config.flyTo = value end)
+    local field = form.addNumberField(line, nil, 50, 100, function() return flyTo end, function(value) flyTo = value end)
     field:suffix("%")
     field:default(80)
+
+    -- Alerts Panel.  Commented out for now as not in use
+    -- local alertsPanel
+    -- alertsPanel = form.addExpansionPanel("Alerts")
+    -- alertsPanel:open(false)
+    -- fillAlertsPanel(alertsPanel, widget)
 end
 
 -- Read configuration from storage
 function batsell.read(widget)
-
-    widget.Config.numBatts = storage.read("numBatts")
-	if widget.Config.numBatts == nil then
-		widget.Config.numBatts = 2
-	end
-	
-    widget.Config.flyTo = storage.read("flyTo")
-	if widget.Config.flyTo == nil then
-		widget.Config.flyTo = 80
-	end
-	
-    for i = 1, widget.Config.numBatts do
-        widget.Batteries["Battery " .. i] = storage.read("Battery" .. i)
+    numBatts = storage.read("numBatts")
+    flyTo = storage.read("flyTo")
+    Batteries = {}
+    if numBatts ~= nil then
+        for i = 1, numBatts do
+            local capacity = storage.read("Battery" .. i .. "_capacity")
+            local modelID = storage.read("Battery" .. i .. "_modelID")
+            Batteries[i] = {capacity = capacity or 0, modelID = modelID or 0}
+        end
     end
-
-    widget.Config.defaultBattery = storage.read("defaultBattery")
-	if widget.Config.defaultBattery == nil then
-		widget.Config.defaultBattery = 1
-	end
-	
-    widget.Config.lastBattery = storage.read("lastBattery")
-	if widget.Config.lastBattery == nil then
-		widget.Config.lastBattery = 1
-	end	
-	
-	
-    if widget.Config.defaultBattery == widget.Config.numBatts + 1 then
-        widget.Config.selectedBattery = storage.read("lastBattery")
-		if widget.Config.selectedBattery == nil then
-			widget.Config.selectedBattery = 1
-		end
-    else
-        widget.Config.selectedBattery = widget.Config.defaultBattery 
-    end
-    widget.Config.DisplayPercent = storage.read("DisplayPercent")
-
+    selectedBattery = storage.read("selectedBattery")
 end
+
 
 -- Write configuration to storage
 function batsell.write(widget)
-    storage.write("numBatts", widget.Config.numBatts)
-    storage.write("flyTo", widget.Config.flyTo)
-    for i = 1, widget.Config.numBatts do
-        if widget.Batteries["Battery " .. i] == nil then
-            widget.Batteries["Battery " .. i] = 0
+    storage.write("numBatts", numBatts)
+    storage.write("flyTo", flyTo)
+    if numBatts ~= nil then
+        for i = 1, numBatts do
+            storage.write("Battery" .. i .. "_capacity", Batteries[i].capacity)
+            storage.write("Battery" .. i .. "_modelID", Batteries[i].modelID)
         end
-        storage.write("Battery" .. i, widget.Batteries["Battery " .. i])
     end
-    storage.write("defaultBattery", widget.Config.defaultBattery)
-    storage.write("lastBattery", widget.Config.lastBattery)
-    storage.write("selectedBattery", widget.Config.selectedBattery)
-    storage.write("DisplayPercent", widget.Config.DisplayPercent)
+    storage.write("selectedBattery", selectedBattery)
 end
 
-function batsell.event(widget, category, value, x, y)
-
+function batsell.event(widget, category, value, x, y) 
+    
 end
 
 return batsell
-
-
