@@ -33,7 +33,7 @@ local function fillBatteryPanel(batteryPanel, widget)
     local line = batteryPanel:addLine("")
 
     -- Create header for the battery panel
-    local field = form.addStaticText(line, pos_Battery_Text, "Battery")
+    local field = form.addStaticText(line, pos_Battery_Text, "Name")
     local field = form.addStaticText(line, pos_Capacity_Text, "Capacity")
     local field = form.addStaticText(line, pos_ModelID_Text, "ID")
 
@@ -50,11 +50,12 @@ local function fillBatteryPanel(batteryPanel, widget)
         local pos_ModelID_Value = {x=642, y=8, w=50, h=40}
         local pos_Delete_Button = {x=700, y=8, w=50, h=40}
 
-        local line = batteryPanel:addLine("Battery " .. i)
+        local line = batteryPanel:addLine("")
             
         -- Create Capacity field for each Battery
         -- I can't get the addTextField below to work so disabling it for now to keep working on the rest of the script
-        -- local field = form.addTextField(line, pos_Name_Value, function() return text end, function(newValue) text = newValue end)
+        local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName) Batteries[i].name = newName end)
+
         local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value) Batteries[i].capacity = value end)
         field:suffix("mAh")
         field:step(100)
@@ -92,7 +93,7 @@ local function fillBatteryPanel(batteryPanel, widget)
 
     -- Ensure that Batteries table entries matches numBatts always
     if numBatts > #Batteries then
-        Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
+        Batteries[numBatts] = {name = "", capacity = 0, modelID = 0}
     elseif numBatts < #Batteries then
         table.remove(Batteries, #Batteries)
     end
@@ -349,9 +350,10 @@ function batsell.read(widget)
     Batteries = {}
     if numBatts ~= nil then
         for i = 1, numBatts do
+            local name = storage.read("Battery" .. i .. "_name")
             local capacity = storage.read("Battery" .. i .. "_capacity")
             local modelID = storage.read("Battery" .. i .. "_modelID")
-            Batteries[i] = {capacity = capacity or 0, modelID = modelID or 0}
+            Batteries[i] = {name = name or "", capacity = capacity or 0, modelID = modelID or 0}
         end
     end
     selectedBattery = storage.read("selectedBattery")
@@ -364,6 +366,7 @@ function batsell.write(widget)
     storage.write("flyTo", flyTo)
     if numBatts ~= nil then
         for i = 1, numBatts do
+            storage.write("Battery" .. i .. "_name", Batteries[i].name)
             storage.write("Battery" .. i .. "_capacity", Batteries[i].capacity)
             storage.write("Battery" .. i .. "_modelID", Batteries[i].modelID)
         end
@@ -372,7 +375,7 @@ function batsell.write(widget)
 end
 
 function batsell.event(widget, category, value, x, y) 
-    
+
 end
 
 return batsell
