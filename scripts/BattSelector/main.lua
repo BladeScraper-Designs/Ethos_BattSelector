@@ -164,36 +164,38 @@ end
 --     local line = alertsPanel:addLine("Eventually")
 -- end
 
+local percentSensor
 local newPercent = 100
 
 local function updateRemainingSensor(widget)
-    local sensor = system.getSource({
-        category = CATEGORY_TELEMETRY,
-        appId = 0x4402
-    })
-    if sensor == nil then
-        if useDebug then
-            print("% Remaining sensor not found, creating...")
+    if percentSensor == nil then 
+        percentSensor = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402})
+
+        if percentSensor == nil then
+            if useDebug then
+                print("% Remaining sensor not found, creating...")
+            end
+            -- if sensor does not already exist, make it
+            percentSensor = model.createSensor()
+            if percentSensor == nil then
+                if useDebug then print("Unable to create sensor") end
+                return -- in case there is no room for another sensor, exit
+            end
+
+            percentSensor:name("Remaining")
+            percentSensor:unit(UNIT_PERCENT)
+            percentSensor:decimals(0)
+            percentSensor:appId(0x4402)
+            percentSensor:physId(0x10)
         end
-        -- if sensor does not already exist, make it
-        sensor = model.createSensor()
-        if sensor == nil then
-            if useDebug then print("Unable to create sensor") end
-            return -- in case there is no room for another sensor, exit
-        end
-        sensor:name("Remaining")
-        sensor:unit(UNIT_PERCENT)
-        sensor:decimals(0)
-        sensor:appId(0x4402)
-        sensor:physId(0x10)
     end
+    
     -- Write current % remaining to the % sensor
-    sensor:value(newPercent)
+    percentSensor:value(math.floor(newPercent))
 
     if useDebug.updateRemainingSensor then
-        if sensor:value() ~= nil then
-            print("Debug(updateRemainingSensor): Remaining: " ..
-                      math.floor(sensor:value()) .. "%")
+        if percentSensor:value() ~= nil then
+            print("Debug(updateRemainingSensor): Remaining: " .. math.floor(percentSensor:value()) .. "%")
         end
     end
 end
@@ -310,8 +312,8 @@ local function wakeup(widget)
         -- Check for valid conditions before doing the maths
         if #Batteries > 0 and tlmActive and selectedBattery and newPercent and newmAh ~= nil then
             if newmAh ~= lastmAh then
-                usablemAh = math.floor(Batteries[selectedBattery].capacity * (flyTo / 100))
-                newPercent = 100 - math.floor((newmAh / usablemAh) * 100)
+                usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
+                newPercent = 100 - (newmAh / usablemAh) * 100
                 if newPercent < 0 then newPercent = 0 end
                 lastmAh = newmAh
                 doTheMaths = false
@@ -320,7 +322,7 @@ local function wakeup(widget)
     end
 
     local sensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-    currentModelID = sensor and sensor:value() and math.floor(sensor:value()) or nil
+    currentModelID = math.floor(sensor:value()) or nil
     
     if #Batteries > 0 and currentModelID ~= nil then
         matchingBatteries = {}
