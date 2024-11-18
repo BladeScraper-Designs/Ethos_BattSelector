@@ -15,7 +15,6 @@ local useDebug = {
 local numBatts
 local flyTo
 local Batteries = {}
-local Favorites = {}
 
 local favoritesPanel
 local batteryPanel
@@ -322,7 +321,7 @@ local function wakeup(widget)
     end
 
     local sensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-    currentModelID = math.floor(sensor:value()) or nil
+    currentModelID = sensor:value() or nil
     
     if #Batteries > 0 and currentModelID ~= nil then
         matchingBatteries = {}
