@@ -293,6 +293,7 @@ end
 local lastMillis = 0
 local lastmAh = 0
 local doTheMaths = false
+local modelIDSensor
 
 local function wakeup(widget)
     local newmAh
@@ -320,9 +321,12 @@ local function wakeup(widget)
         end
     end
 
-    local sensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-    currentModelID = sensor:value() or nil
+    if modelIDSensor == nil then 
+        modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
+    end
     
+    currentModelID = modelIDSensor:value() or nil
+
     if #Batteries > 0 and currentModelID ~= nil then
         matchingBatteries = {}
         for i = 1, #Batteries do
