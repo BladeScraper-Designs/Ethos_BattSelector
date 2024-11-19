@@ -3,10 +3,10 @@
 -- Set to true to enable debug output for each function
 local useDebug = {
     fillBatteryPanel = false,
-    updateRemainingSensor = true,
-    getmAh = true,
+    updateRemainingSensor = false,
+    getmAh = false,
     create = false,
-    build = true,
+    build = false,
     paint = false,
     wakeup = false,
     configure = false
@@ -21,6 +21,8 @@ local batteryPanel
 
 local rebuildForm = false
 local rebuildWidget = false
+
+local tlmActive
 
 -- Favorites Panel in Configure
 local uniqueIDs = {}
@@ -163,6 +165,64 @@ end
 --     local line = alertsPanel:addLine("Eventually")
 -- end
 
+local voltageSensor
+local checkBatteryVoltageOnConnect = true
+local voltageDialogDismissed = false
+local isCharged
+local batteryConnectTime
+
+-- Estimate cellcount and check if battery is charged
+-- Will be implemented properly later, only popping up if it's just after first plugging in the battery
+local function doBatteryVoltageCheck(widget)
+    if checkBatteryVoltageOnConnect and voltageDialogDismissed == false then
+        if batteryConnectTime == nil then
+            batteryConnectTime = os.clock()
+        end
+
+        if batteryConnectTime and (os.clock() - batteryConnectTime) <= 30 then
+            -- Check if voltage sensor exists, if not, get it
+            if voltageSensor == nil then
+                voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
+            end
+            
+            -- Get the current voltage reading
+            local currentVoltage = voltageSensor:value() or nil
+            if currentVoltage ~= nil then
+                
+                -- Minimum and maximum voltages per cell
+                local minChargedCellVoltage, maxChargedCellVoltage = 4.15, 4.35 -- Voltage per cell (used for estimation)
+    
+                local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
+    
+                if currentVoltage >= estimatedCells * maxChargedCellVoltage then
+                    estimatedCells = estimatedCells + 1
+                end
+    
+                -- Calculate the fully charged voltage for the estimated number of cells
+                local chargedVoltage = estimatedCells * minChargedCellVoltage
+                
+                isCharged = currentVoltage >= chargedVoltage
+            end
+    
+            if isCharged == false and voltageDialogDismissed == false then
+                local buttons = {
+                    {label = "OK", action = function() 
+                        voltageDialogDismissed = true 
+                        return true 
+                    end}
+                }
+                form.openDialog({
+                    title = "Low Battery Voltage",
+                    message = "Battery may not be charged!",
+                    width = 325,
+                    buttons = buttons,
+                    options = TEXT_LEFT,
+                })
+            end
+        end
+    end
+end
+
 local percentSensor
 local newPercent = 100
 
@@ -241,7 +301,6 @@ end
 
 -- This function is called when the widget is first created
 local function create(widget)
-    print("BattSelector: Create")
     -- return
 end
 
@@ -294,22 +353,37 @@ local lastMillis = 0
 local lastmAh = 0
 local doTheMaths = false
 local modelIDSensor
+local doRuntime = false
+local lastRuntimeMillis = 0
 
 local function wakeup(widget)
-    local newmAh
-    local tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
-
-    -- Check time since last mAh/Remaining update, if >1.0s, do the math
-    local millis = os.clock()
-    if (millis - lastMillis) >= 1.0 then
-        newmAh = getmAh()
-        lastMillis = millis
-        updateRemainingSensor(widget) -- Always update Remaining sensor every 1.0s to prevent sensor lost, regardless of whether its value has changed or not
-        doTheMaths = true
+    local function calculateRuntime()
+        local currentTime = os.clock()
+        if lastRuntimeMillis > 0 then
+            local period = currentTime - lastRuntimeMillis
+            local frequency = 1 / period
+            local periodMs = period * 1000
+            print(string.format("Wakeup period: %.2f Hz (%.2f ms)", frequency, periodMs))
+        end
+        lastRuntimeMillis = currentTime
     end
 
-    if doTheMaths then 
-        -- Check for valid conditions before doing the maths
+    if doRuntime then
+        calculateRuntime()
+    end
+    -- Check time since last loop, if >2.0s, do all the stuff
+    local millis = os.clock()
+    if (millis - lastMillis) >= 2.0 then
+        tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
+
+        if not tlmActive then
+            voltageDialogDismissed = false
+        elseif not voltageDialogDismissed then
+            doBatteryVoltageCheck(widget)
+        end
+
+        local newmAh = getmAh()
+        lastMillis = millis
         if #Batteries > 0 and tlmActive and selectedBattery and newPercent and newmAh ~= nil then
             if newmAh ~= lastmAh then
                 usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
@@ -319,43 +393,43 @@ local function wakeup(widget)
                 doTheMaths = false
             end
         end
-    end
-
-    if modelIDSensor == nil then 
-        modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-    end
-    
-    currentModelID = modelIDSensor:value() or nil
-
-    if #Batteries > 0 and currentModelID ~= nil then
-        matchingBatteries = {}
-        for i = 1, #Batteries do
-            if Batteries[i].modelID == currentModelID then
-                matchingBatteries[#matchingBatteries + 1] = {
-                    Batteries[i].name, i
-                }
-            end
+        updateRemainingSensor(widget) -- Always update Remaining sensor every 1.0s to prevent sensor lost, regardless of whether its value has changed or not
+        if modelIDSensor == nil then 
+            modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
         end
-        build(widget)
-    if selectedBattery == nil or not Batteries[selectedBattery] or Batteries[selectedBattery].modelID ~= currentModelID then
-        for i = 1, #Batteries do
-            if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
-                selectedBattery = i
-                break
+        
+        currentModelID = modelIDSensor:value() or nil
+    
+        if #Batteries > 0 and currentModelID ~= nil then
+            matchingBatteries = {}
+            for i = 1, #Batteries do
+                if Batteries[i].modelID == currentModelID then
+                    matchingBatteries[#matchingBatteries + 1] = {
+                        Batteries[i].name, i
+                    }
+                end
+            end
+            build(widget)
+        if selectedBattery == nil or not Batteries[selectedBattery] or Batteries[selectedBattery].modelID ~= currentModelID then
+            for i = 1, #Batteries do
+                if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
+                    selectedBattery = i
+                    break
+                    end
                 end
             end
         end
-    end
-
-    if not formCreated then
-        if currentModelID ~= nil then
-            build(widget)
-            lastModelID = currentModelID
-        elseif currentModelID ~= lastModelID then
-            build(widget)
-            lastModelID = currentModelID
-        else
-            return
+    
+        if not formCreated then
+            if currentModelID ~= nil then
+                build(widget)
+                lastModelID = currentModelID
+            elseif currentModelID ~= lastModelID then
+                build(widget)
+                lastModelID = currentModelID
+            else
+                return
+            end
         end
     end
 
