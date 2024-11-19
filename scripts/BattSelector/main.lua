@@ -175,57 +175,51 @@ local doneVoltageCheck = false
 -- Estimate cellcount and check if battery is charged
 -- Will be implemented properly later, only popping up if it's just after first plugging in the battery
 local function doBatteryVoltageCheck(widget)
-    if checkBatteryVoltageOnConnect and voltageDialogDismissed == false then
-        if batteryConnectTime == nil then
-            batteryConnectTime = os.clock()
-        end
+    if batteryConnectTime == nil then
+        batteryConnectTime = os.clock()
+    end
 
-        if batteryConnectTime and (os.clock() - batteryConnectTime) <= 30 then
-            -- Check if voltage sensor exists, if not, get it
-            if voltageSensor == nil then
-                voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
-            end
-            
-            -- Get the current voltage reading
-            local currentVoltage = voltageSensor:value() or nil
-            if currentVoltage ~= nil then
-                
-                -- Minimum and maximum voltages per cell
-                local minChargedCellVoltage, maxChargedCellVoltage = 4.15, 4.35 -- Voltage per cell (used for estimation)
-    
-                local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
-    
-                if currentVoltage >= estimatedCells * maxChargedCellVoltage then
-                    estimatedCells = estimatedCells + 1
-                end
-                
-                print("Estimated Cells: " .. estimatedCells)
-                print()
-                -- Calculate the fully charged voltage for the estimated number of cells
-                local chargedVoltage = estimatedCells * minChargedCellVoltage
-                
-                isCharged = currentVoltage >= chargedVoltage
-                doneVoltageCheck = true
-            end
-    
-            if isCharged == false and voltageDialogDismissed == false then
-                local buttons = {
-                    {label = "OK", action = function() 
-                        voltageDialogDismissed = true 
-                        return true 
-                    end}
-                }
-                form.openDialog({
-                    title = "Low Battery Voltage",
-                    message = "Battery may not be charged!",
-                    width = 325,
-                    buttons = buttons,
-                    options = TEXT_LEFT,
-                })
-            end
+    if batteryConnectTime and (os.clock() - batteryConnectTime) <= 30 then
+        -- Check if voltage sensor exists, if not, get it
+        if voltageSensor == nil then
+            voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
         end
-    else
-        doneVoltageCheck = false
+            
+        -- Get the current voltage reading
+        local currentVoltage = voltageSensor:value() or nil
+        if currentVoltage ~= nil then
+                
+            -- Minimum and maximum voltages per cell
+            local minChargedCellVoltage, maxChargedCellVoltage = 4.15, 4.35 -- Voltage per cell (used for estimation)
+    
+            local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
+    
+            if currentVoltage >= estimatedCells * maxChargedCellVoltage then
+                estimatedCells = estimatedCells + 1
+            end
+                
+            -- Calculate the fully charged voltage for the estimated number of cells
+            local chargedVoltage = estimatedCells * minChargedCellVoltage
+                
+            isCharged = currentVoltage >= chargedVoltage
+            doneVoltageCheck = true
+        end
+    
+        if isCharged == false and voltageDialogDismissed == false then
+            local buttons = {
+                {label = "OK", action = function() 
+                    voltageDialogDismissed = true 
+                    return true 
+                end}
+            }
+            form.openDialog({
+                title = "Low Battery Voltage",
+                message = "Battery may not be charged!",
+                width = 325,
+                buttons = buttons,
+                options = TEXT_LEFT,
+            })
+        end
     end
 end
 
@@ -368,8 +362,9 @@ local function wakeup(widget)
         if not tlmActive then
             voltageDialogDismissed = false
             doneVoltageCheck = false
+            batteryConnectTime = nil
         else
-            if not voltageDialogDismissed and not doneVoltageCheck then
+            if checkBatteryVoltageOnConnect == true and not doneVoltageCheck and not voltageDialogDismissed then
                 doBatteryVoltageCheck(widget)
             end
         end
