@@ -1,5 +1,5 @@
 # BattSelector (V2 Branch)
-Battery selection widget for FrSky Ethos.  Tested on Ethos Version 1.5.18 and higher.<br>
+Battery selection widget for FrSky Ethos.  Tested on Ethos Version 1.5.18 only.<br>
 Utilizes Rotorflight ModelID telemetry sensor to list only batteries tied to current ID.
 
 ## Installation
