@@ -359,19 +359,20 @@ local function wakeup(widget)
     local millis = os.clock()
     if (millis - lastMillis) >= 1.0 then
         tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
-        if not tlmActive then
+        if not tlmActive then -- Reset all doBatteryVoltageCheck parameters so that it can run again on next battery connect
             voltageDialogDismissed = false
             doneVoltageCheck = false
             batteryConnectTime = nil
-        else
+        else -- If telemetry is active, run doBatteryVoltageCheck if it hasn't been done yet or already run but dismissed
             if checkBatteryVoltageOnConnect == true and not doneVoltageCheck and not voltageDialogDismissed then
                 doBatteryVoltageCheck(widget)
             end
         end
 
         local newmAh = getmAh()
-        lastMillis = millis
-        if #Batteries > 0 and tlmActive and selectedBattery and newPercent and newmAh ~= nil then
+        lastMillis = millis -- Reset looptime 
+        -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
+        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil then
             if newmAh ~= lastmAh then
                 usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
                 newPercent = 100 - (newmAh / usablemAh) * 100
@@ -379,14 +380,18 @@ local function wakeup(widget)
                 lastmAh = newmAh
                 doTheMaths = false
             end
-        end
-        updateRemainingSensor(widget) -- Always update Remaining sensor every 1.0s to prevent sensor lost, regardless of whether its value has changed or not
+        end 
+        updateRemainingSensor(widget) -- Update the remaining sensor
+
+        -- If modelID sensor is not yet acquired, acquire it
         if modelIDSensor == nil then 
             modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
         end
         
+        -- Get current model ID from Model ID sensor
         currentModelID = modelIDSensor:value() or nil
     
+        -- If Batteries are configured and ModelID is valid, create matchingBatteries table and populate it with any Battery that matches the current Model ID 
         if #Batteries > 0 and currentModelID ~= nil then
             matchingBatteries = {}
             for i = 1, #Batteries do
@@ -397,6 +402,7 @@ local function wakeup(widget)
                 end
             end
             build(widget)
+        -- If there is no selectedBattery or it is not valid, find the favorite battery for current Model ID and select it
         if selectedBattery == nil or not Batteries[selectedBattery] or Batteries[selectedBattery].modelID ~= currentModelID then
             for i = 1, #Batteries do
                 if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
@@ -406,21 +412,20 @@ local function wakeup(widget)
                 end
             end
         end
-    
-        if not formCreated then
-            if currentModelID ~= nil then
-                build(widget)
-                lastModelID = currentModelID
-            elseif currentModelID ~= lastModelID then
-                build(widget)
-                lastModelID = currentModelID
-            else
-                return
-            end
+
+        -- Check to see if ModelID has changed, if so, rebuild the widget to update the battery choices
+        if currentModelID ~= nil then
+            build(widget)
+            lastModelID = currentModelID
+        elseif currentModelID ~= lastModelID then
+            build(widget)
+            lastModelID = currentModelID
+        else
+            return
         end
     end
 
-    -- Rebuild form and widget if needed
+    -- Rebuild form and widget if needed.  This is done outside of the 1s looptime so that the form/widget updates instantly when required
     if rebuildForm then
         batteryPanel:clear()
         fillBatteryPanel(batteryPanel, widget)
@@ -437,24 +442,25 @@ end
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 local function configure(widget)
-    doneConfigure = true
-
+    -- Fill Batteries panel
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
     fillBatteryPanel(batteryPanel, widget)
 
+    -- Fill Favorites panel
     favoritesPanel = form.addExpansionPanel("Favorites")
     favoritesPanel:open(false)
     fillFavoritesPanel(favoritesPanel, widget)
 
     -- Create field for entering desired "fly-to" percentage (80% typical)
-    if flyTo == nil then flyTo = 80 end
     local line = form.addLine("Use Capacity")
-    local field = form.addNumberField(line, nil, 50, 100,
-                                      function() return flyTo end,
-                                      function(value) flyTo = value end)
+    local field = form.addNumberField(line, nil, 50, 100, function() return flyTo end, function(value) flyTo = value end)
     field:suffix("%")
     field:default(80)
+
+    -- Not yet implemented
+    -- local line = form.addLine("Check Voltage on Connect")
+    -- local field = form.addBooleanField(line, nil, function() return value end, function(newValue) value = newValue end)
 
     -- Alerts Panel.  Commented out for now as not in use
     -- local alertsPanel
@@ -463,8 +469,8 @@ local function configure(widget)
     -- fillAlertsPanel(alertsPanel, widget)
 end
 
--- Read configuration from storage
-local function read(widget)
+
+local function read(widget) -- Read configuration from storage
     numBatts = storage.read("numBatts") or 0
     flyTo = storage.read("flyTo") or 80
     Batteries = {}
@@ -484,8 +490,8 @@ local function read(widget)
     end
 end
 
--- Write configuration to storage
-local function write(widget)
+
+local function write(widget) -- Write configuration to storage
     storage.write("numBatts", numBatts)
     storage.write("flyTo", flyTo)
     if numBatts > 0 then
@@ -498,7 +504,9 @@ local function write(widget)
     end
 end
 
+
 local function event(widget, category, value, x, y) end
+
 
 local function init()
     system.registerWidget({
@@ -515,5 +523,6 @@ local function init()
         runDebug = runDebug
     })
 end
+
 
 return {init = init}
