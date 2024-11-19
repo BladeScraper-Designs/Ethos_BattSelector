@@ -166,11 +166,11 @@ end
 -- end
 
 local voltageSensor
-local checkBatteryVoltageOnConnect = true
 local voltageDialogDismissed = false
 local isCharged
 local batteryConnectTime
 local doneVoltageCheck = false
+local checkBatteryVoltageOnConnect
 
 -- Estimate cellcount and check if battery is charged
 -- Will be implemented properly later, only popping up if it's just after first plugging in the battery
@@ -458,9 +458,9 @@ local function configure(widget)
     field:suffix("%")
     field:default(80)
 
-    -- Not yet implemented
-    -- local line = form.addLine("Check Voltage on Connect")
-    -- local field = form.addBooleanField(line, nil, function() return value end, function(newValue) value = newValue end)
+    -- Create field to enable/disable battery voltage checking on connect
+    local line = form.addLine("Battery Voltage Check")
+    local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue end)
 
     -- Alerts Panel.  Commented out for now as not in use
     -- local alertsPanel
@@ -488,6 +488,7 @@ local function read(widget) -- Read configuration from storage
             }
         end
     end
+    checkBatteryVoltageOnConnect = storage.read("checkBatteryVoltageOnConnect") or false
 end
 
 
@@ -502,6 +503,7 @@ local function write(widget) -- Write configuration to storage
             storage.write("Battery" .. i .. "_favorite", Batteries[i].favorite)
         end
     end
+    storage.write("checkBatteryVoltageOnConnect", checkBatteryVoltageOnConnect)
 end
 
 
