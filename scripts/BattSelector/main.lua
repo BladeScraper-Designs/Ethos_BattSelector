@@ -170,6 +170,7 @@ local checkBatteryVoltageOnConnect = true
 local voltageDialogDismissed = false
 local isCharged
 local batteryConnectTime
+local doneVoltageCheck = false
 
 -- Estimate cellcount and check if battery is charged
 -- Will be implemented properly later, only popping up if it's just after first plugging in the battery
@@ -197,11 +198,14 @@ local function doBatteryVoltageCheck(widget)
                 if currentVoltage >= estimatedCells * maxChargedCellVoltage then
                     estimatedCells = estimatedCells + 1
                 end
-    
+                
+                print("Estimated Cells: " .. estimatedCells)
+                print()
                 -- Calculate the fully charged voltage for the estimated number of cells
                 local chargedVoltage = estimatedCells * minChargedCellVoltage
                 
                 isCharged = currentVoltage >= chargedVoltage
+                doneVoltageCheck = true
             end
     
             if isCharged == false and voltageDialogDismissed == false then
@@ -220,6 +224,8 @@ local function doBatteryVoltageCheck(widget)
                 })
             end
         end
+    else
+        doneVoltageCheck = false
     end
 end
 
@@ -353,33 +359,19 @@ local lastMillis = 0
 local lastmAh = 0
 local doTheMaths = false
 local modelIDSensor
-local doRuntime = false
-local lastRuntimeMillis = 0
 
 local function wakeup(widget)
-    local function calculateRuntime()
-        local currentTime = os.clock()
-        if lastRuntimeMillis > 0 then
-            local period = currentTime - lastRuntimeMillis
-            local frequency = 1 / period
-            local periodMs = period * 1000
-            print(string.format("Wakeup period: %.2f Hz (%.2f ms)", frequency, periodMs))
-        end
-        lastRuntimeMillis = currentTime
-    end
-
-    if doRuntime then
-        calculateRuntime()
-    end
-    -- Check time since last loop, if >2.0s, do all the stuff
+    -- Check time since last loop, if >1.0s, do all the stuff
     local millis = os.clock()
-    if (millis - lastMillis) >= 2.0 then
+    if (millis - lastMillis) >= 1.0 then
         tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
-
         if not tlmActive then
             voltageDialogDismissed = false
-        elseif not voltageDialogDismissed then
-            doBatteryVoltageCheck(widget)
+            doneVoltageCheck = false
+        else
+            if not voltageDialogDismissed and not doneVoltageCheck then
+                doBatteryVoltageCheck(widget)
+            end
         end
 
         local newmAh = getmAh()
