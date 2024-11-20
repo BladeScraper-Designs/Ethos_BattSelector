@@ -1,6 +1,17 @@
 -- Lua Battery Selector and Alarm widget
 -- BattSelect + ETHOS LUA configuration
 -- Set to true to enable debug output for each function
+
+-- Known Issues:
+-- 1. If you change models to another model with BattSelector, the Remaining Sensor will not function.
+-- 2. If you change models to another model with BattSelector, the matchingBatteries list (and therefore widget choiceField) will not update.
+-- 3. You have to change ModelID for a battery 1 at a time because it refreshes the form immediately, which causes the numberField to become deselected.
+
+-- Restarting the radio makes 1 and 2 work again, but I'd like to figure out *why* it happens and fix it properly at some point.
+
+-- 3 is a limitation of the way the form is currently built, and I'm not sure how to fix it tbh.  
+-- It's necessary to keep the Favorites tab updated when you change the ID of a battery, but can be inconvenient.
+
 local useDebug = {
     fillBatteryPanel = false,
     updateRemainingSensor = false,
@@ -167,13 +178,11 @@ end
 
 local voltageSensor
 local voltageDialogDismissed = false
-local isCharged
 local batteryConnectTime
 local doneVoltageCheck = false
 local checkBatteryVoltageOnConnect
 
--- Estimate cellcount and check if battery is charged
--- Will be implemented properly later, only popping up if it's just after first plugging in the battery
+-- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck(widget)
     if batteryConnectTime == nil then
         batteryConnectTime = os.clock()
@@ -184,23 +193,28 @@ local function doBatteryVoltageCheck(widget)
         if voltageSensor == nil then
             voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
         end
-            
+
         -- Get the current voltage reading
-        local currentVoltage = voltageSensor:value() or nil
+        local currentVoltage
+        if voltageSensor ~= nil then
+            currentVoltage = voltageSensor:value() or nil
+        end
+
+        local isCharged
+
         if currentVoltage ~= nil then
-                
             -- Minimum and maximum voltages per cell
             local minChargedCellVoltage, maxChargedCellVoltage = 4.15, 4.35 -- Voltage per cell (used for estimation)
     
             local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
-    
+            
             if currentVoltage >= estimatedCells * maxChargedCellVoltage then
                 estimatedCells = estimatedCells + 1
             end
-                
+
             -- Calculate the fully charged voltage for the estimated number of cells
             local chargedVoltage = estimatedCells * minChargedCellVoltage
-                
+            
             isCharged = currentVoltage >= chargedVoltage
             doneVoltageCheck = true
         end
@@ -210,8 +224,7 @@ local function doBatteryVoltageCheck(widget)
                 {label = "OK", action = function() 
                     voltageDialogDismissed = true 
                     return true 
-                end}
-            }
+                end}}
             form.openDialog({
                 title = "Low Battery Voltage",
                 message = "Battery may not be charged!",
@@ -223,39 +236,24 @@ local function doBatteryVoltageCheck(widget)
     end
 end
 
+
 local percentSensor
 local newPercent = 100
 
 local function updateRemainingSensor(widget)
-    if percentSensor == nil then 
-        percentSensor = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402})
-
+    if percentSensor == nil then
+        percentSensor = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402, physId = 0x11, name = "Remaining"})
         if percentSensor == nil then
-            if useDebug then
-                print("% Remaining sensor not found, creating...")
-            end
-            -- if sensor does not already exist, make it
             percentSensor = model.createSensor()
-            if percentSensor == nil then
-                if useDebug then print("Unable to create sensor") end
-                return -- in case there is no room for another sensor, exit
-            end
-
             percentSensor:name("Remaining")
             percentSensor:unit(UNIT_PERCENT)
             percentSensor:decimals(0)
             percentSensor:appId(0x4402)
-            percentSensor:physId(0x10)
+            percentSensor:physId(0x11)
         end
-    end
-    
-    -- Write current % remaining to the % sensor
-    percentSensor:value(math.floor(newPercent))
-
-    if useDebug.updateRemainingSensor then
-        if percentSensor:value() ~= nil then
-            print("Debug(updateRemainingSensor): Remaining: " .. math.floor(percentSensor:value()) .. "%")
-        end
+    end 
+    if percentSensor ~= nil then
+        percentSensor:value(newPercent)
     end
 end
 
@@ -264,9 +262,6 @@ local mAhSensor
 
 local function getmAh()
     if mAhSensor == nil then
-        if useDebug.getmAh then
-            print("Debug(getmAh): Searching for mAh Sensor...")
-        end
         for member = 0, 25 do
             local candidate = system.getSource({
                 category = CATEGORY_TELEMETRY_SENSOR,
@@ -276,9 +271,6 @@ local function getmAh()
             if candidate then
                 if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
                     mAhSensor = candidate
-                    if useDebug.getmAh then
-                        print("Debug(getmAh): Found mAh sensor: " .. "'" .. mAhSensor:name() .. "'")
-                    end
                     break -- Exit the loop once a valid mAh sensor is found
                 end
             end
@@ -292,9 +284,6 @@ local function getmAh()
         end
         return math.floor(mAhSensor:value())
     else
-        if useDebug.getmAh then
-            print("Debug(getmAh): No valid mAh sensor found or value is nil.")
-        end
         return 0
     end
 end
@@ -306,15 +295,19 @@ end
 
 local formCreated = false
 local selectedBattery
-local matchingBatteries = {}
-local currentModelID = 0
+local matchingBatteries
+local currentModelID
 
 local function build(widget)
-    if selectedBattery == nil then
-        selectedBattery = 1
-    end
-
     local w, h = lcd.getWindowSize()
+
+    print("Debug(build): Building widget based on matchingBatteries table:")
+    if matchingBatteries and selectedBattery then
+        for i, battery in ipairs(matchingBatteries) do
+            print("Debug(build): Battery " .. i .. ": Name = " .. battery[1] .. ", Index = " .. battery[2])
+        end
+        print("Debug(build): Selected Battery: " .. (selectedBattery or "nil"))
+    end
 
     -- Get Radio Version to determine field size
     local radio = system.getVersion()
@@ -330,7 +323,7 @@ local function build(widget)
         -- Currently not tested on other radios (X10,X12,X14)
     end
 
-    if #Batteries > 0 and currentModelID ~= nil and selectedBattery ~= nil then
+    if #Batteries > 0 and selectedBattery ~= nil then
         local pos_x = (w / 2 - fieldWidth / 2)
         local pos_y = (h / 2 - fieldHeight / 2)
 
@@ -345,100 +338,127 @@ local function build(widget)
     end
 end
 
-local function paint(widget)
-    -- Idk if this is needed since I'm not drawing anything on the LCD but I'm leaving it here for now
-end
-
-local lastMillis = 0
 local lastmAh = 0
-local doTheMaths = false
 local modelIDSensor
 
-local function wakeup(widget)
-    -- Check time since last loop, if >1.0s, do all the stuff
-    local millis = os.clock()
-    if (millis - lastMillis) >= 1.0 then
-        tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
-        if not tlmActive then -- Reset all doBatteryVoltageCheck parameters so that it can run again on next battery connect
-            voltageDialogDismissed = false
-            doneVoltageCheck = false
-            batteryConnectTime = nil
-        else -- If telemetry is active, run doBatteryVoltageCheck if it hasn't been done yet or already run but dismissed
-            if checkBatteryVoltageOnConnect == true and not doneVoltageCheck and not voltageDialogDismissed then
-                doBatteryVoltageCheck(widget)
-            end
-        end
+local function refreshMatchingBatteries()
+    matchingBatteries = {}
 
-        local newmAh = getmAh()
-        lastMillis = millis -- Reset looptime 
-        -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
-        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil then
-            if newmAh ~= lastmAh then
-                usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
-                newPercent = 100 - (newmAh / usablemAh) * 100
-                if newPercent < 0 then newPercent = 0 end
-                lastmAh = newmAh
-                doTheMaths = false
-            end
-        end 
-        updateRemainingSensor(widget) -- Update the remaining sensor
-
-        -- If modelID sensor is not yet acquired, acquire it
-        if modelIDSensor == nil then 
-            modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-        end
-        
-        -- Get current model ID from Model ID sensor
-        currentModelID = modelIDSensor:value() or nil
-    
-        -- If Batteries are configured and ModelID is valid, create matchingBatteries table and populate it with any Battery that matches the current Model ID 
-        if #Batteries > 0 and currentModelID ~= nil then
-            matchingBatteries = {}
-            for i = 1, #Batteries do
-                if Batteries[i].modelID == currentModelID then
-                    matchingBatteries[#matchingBatteries + 1] = {
-                        Batteries[i].name, i
-                    }
+    if #Batteries > 0 then
+        if modelIDSensor ~= nil then
+            if currentModelID == nil then
+                for i = 1, #Batteries do
+                    matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
                 end
-            end
-            build(widget)
-        -- If there is no selectedBattery or it is not valid, find the favorite battery for current Model ID and select it
-        if selectedBattery == nil or not Batteries[selectedBattery] or Batteries[selectedBattery].modelID ~= currentModelID then
-            for i = 1, #Batteries do
-                if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
-                    selectedBattery = i
-                    break
+            else
+                for i = 1, #Batteries do
+                    if Batteries[i].modelID == currentModelID then
+                        matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
                     end
                 end
             end
-        end
-
-        -- Check to see if ModelID has changed, if so, rebuild the widget to update the battery choices
-        if currentModelID ~= nil then
-            build(widget)
-            lastModelID = currentModelID
-        elseif currentModelID ~= lastModelID then
-            build(widget)
-            lastModelID = currentModelID
         else
-            return
+            for i = 1, #Batteries do
+                matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
+            end
         end
-    end
 
-    -- Rebuild form and widget if needed.  This is done outside of the 1s looptime so that the form/widget updates instantly when required
-    if rebuildForm then
-        batteryPanel:clear()
-        fillBatteryPanel(batteryPanel, widget)
-        favoritesPanel:clear()
-        fillFavoritesPanel(favoritesPanel, widget)
-        rebuildForm = false
-    end
-
-    if rebuildWidget then
-        build(widget)
-        rebuildWidget = false
+        if selectedBattery == nil then
+            if currentModelID ~= nil then
+                for i = 1, #Batteries do
+                    if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
+                        selectedBattery = i
+                        break
+                    end
+                end
+            elseif selectedBattery == nil and #matchingBatteries > 0 then
+                selectedBattery = matchingBatteries[1][2]
+            end
+        end
     end
 end
+
+local lastModelID = nil
+local rebuildMatching = true
+local lastTime = os.clock()
+
+local function wakeup(widget)
+    -- Get the current uptime
+    local currentTime = os.clock()
+
+    if currentTime - lastTime >= 1 then
+        tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
+        -- Reset all doBatteryVoltageCheck parameters when telemetry becomes inactive so that it can run again on next battery connect
+        if not tlmActive and not resetDone then
+            voltageDialogDismissed = false
+            doneVoltageCheck = false
+            batteryConnectTime = nil
+            resetDone = true
+        elseif tlmActive then
+            resetDone = false
+        end
+
+        -- If telemetry is active and voltage check is enabled, run check if it hasn't been done yet
+        if tlmActive and checkBatteryVoltageOnConnect and not doneVoltageCheck and not voltageDialogDismissed then
+            doBatteryVoltageCheck(widget)
+        end
+        -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
+        local newmAh = getmAh()
+        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil and flyTo ~= nil then
+            if newmAh ~= lastmAh then
+                local usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
+                newPercent = 100 - (newmAh / usablemAh) * 100
+                if newPercent < 0 then newPercent = 0 end
+                lastmAh = newmAh
+            end
+        end
+        updateRemainingSensor(widget) -- Update the remaining sensor
+        -- Check for modelID sensor presence and its value
+        if modelIDSensor == nil then 
+            modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
+            if modelIDSensor ~= nil and modelIDSensor:value() ~= nil then
+                currentModelID = math.floor(modelIDSensor:value()) or nil
+            end
+        else
+            if modelIDSensor:value() ~= nil then
+                currentModelID = math.floor(modelIDSensor:value()) or nil
+            end
+        end
+
+        rebuildMatching = true
+        rebuildWidget = true        
+
+            -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
+        if currentModelID ~= lastModelID then
+            selectedBattery = nil
+            lastModelID = currentModelID
+            rebuildMatching = true
+        end
+
+        -- If the rebuildMatching flag is true, refresh the matchingBatteries list and rebuild the widget
+        if rebuildMatching then 
+            refreshMatchingBatteries()
+            rebuildMatching = false
+            rebuildWidget = true
+        end
+
+        -- Rebuild form and widget if needed. This is done outside of the 1s looptime so that the form/widget updates instantly when required
+        if rebuildForm then
+            batteryPanel:clear()
+            fillBatteryPanel(batteryPanel, widget)
+            favoritesPanel:clear()
+            fillFavoritesPanel(favoritesPanel, widget)
+            rebuildForm = false
+        end
+
+        if rebuildWidget then
+            build(widget)
+            rebuildWidget = false
+        end
+        lastTime = currentTime
+    end
+end
+
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 local function configure(widget)
@@ -507,7 +527,17 @@ local function write(widget) -- Write configuration to storage
 end
 
 
+local function paint(widget) end
+
 local function event(widget, category, value, x, y) end
+
+local function close()
+    Batteries = nil
+    matchingBatteries = nil
+    currentModelID = nil
+    system.exit()
+    return true
+end
 
 
 local function init()
@@ -522,7 +552,8 @@ local function init()
         configure = configure,
         read = read,
         write = write,
-        runDebug = runDebug
+        runDebug = runDebug,
+        close = close
     })
 end
 
