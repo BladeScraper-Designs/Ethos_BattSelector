@@ -5,7 +5,7 @@
 -- Known Issues:
 -- 1. If you change models to another model with BattSelector, the Remaining Sensor will not function.
 -- 2. If you change models to another model with BattSelector, the matchingBatteries list (and therefore widget choiceField) will not update.
--- 3. You have to change ModelID for a battery 1 at a time because it refreshes the form immediately, which causes the numberField to become deselected.
+-- 3. You have to change ModelID for a battery one at a time because it refreshes the form immediately, which causes the numberField to become deselected.
 
 -- Restarting the radio makes 1 and 2 work again, but I'd like to figure out *why* it happens and fix it properly at some point.
 
