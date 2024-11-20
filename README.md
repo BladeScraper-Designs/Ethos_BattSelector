@@ -1,7 +1,10 @@
 # BattSelector V2
-Battery selection widget for FrSky Ethos.  Tested on Ethos Version 1.5.18 only.<br>
-Utilizes Rotorflight ModelID telemetry sensor to list only batteries tied to current ID.<br>
-When modelID is not available, it lists all batteries.  Useful for non-Rotorflight systems.
+On-widget battery selection and percent remaining calculator for FrSky Ethos.<br>
+Tested on Ethos Version 1.5.18 only.<br>
+
+## Features
+
+## Settings/Configuration
 
 ## Prerequisites
 1. You should have a mAh sensor from somewhere. Rotorflight, ESC with S.Port telemetry, or a calculated mAh sensor from a Current source. 
@@ -12,10 +15,6 @@ When modelID is not available, it lists all batteries.  Useful for non-Rotorflig
 ## Installation
 Method 1. Download BattSelector.zip from the latest [Release](https://github.com/BladeScraper-Designs/Ethos_BattSelector/releases) and use Ethos Suite LUA Development tools to install it.<br>
 Method 2. Download [main.lua](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/scripts/BattSelector/main.lua) directly and place it in a folder called BattSelector in your scripts directory. 
-
-## Features
-
-## Settings/Configuration
 
 ### Version History
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
