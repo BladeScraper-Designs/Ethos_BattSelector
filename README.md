@@ -14,7 +14,7 @@ This widget creates an on-widget form for selecting the battery you'll be flying
 This widget features an optional (through Widget Configuration page) Voltage Check.  Upon first receiving telemetry, it estimates the cellcount based on the received voltage and if it is determined to be not fully charged, it pops up an alert telling you that you may have plugged in a not-fully-charged battery. The check is disabled after 30s to prevent the alert after takeoff, and is reset when telemetry stops to be ready for the next battery.<br>
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Voltage_Warning.png?raw=true)
 
-## Rotorflight Model ID Telemetry Integration (Favorites)
+## Rotorflight Model ID Telemetry Integration
 If you're using this widget with Rotorflight 2.1, you can set the ModelID of each battery.  By doing this, when a valid Model ID telemetry sensor is present and active, the list of batteries in the widget will only show batteries that are tied to the current Model ID.  When a Model ID sensor is not present or present but not working (i.e. value is nil), the widget will list all batteries.<br>
 
 As part of the Rotorflight Model ID Telemetry Integration, you can set up a "Favorite Battery" for each Model ID.  When a heli with the model ID is connected, it will default to your chosen Favorite battery for that ID.
@@ -31,7 +31,7 @@ Drop down the "Batteries" expansion panel and add/remove batteries as needed.  G
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Batteries_Options.png?raw=true)
 
 ## Favorites
-See [Favorites](##-rotorflight-model-id-telemetry-tntegration-(favorites)) for more info.<br>
+See [Favorites](##-rotorflight-model-id-telemetry-integration-(favorites)) for more info.<br>
 
 # Preferences
 ## Use Capacity
