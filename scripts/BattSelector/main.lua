@@ -36,7 +36,6 @@ local tlmActive
 -- Favorites Panel in Configure
 local uniqueIDs = {}
 local function fillFavoritesPanel(favoritesPanel, widget)
-    -- Favorites Panel Header
     -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_ModelID_Text = {x = 10, y = 8, w = 200, h = 40}
     local pos_Favorite_Text = {x = 530, y = 8, w = 100, h = 40}
@@ -45,9 +44,8 @@ local function fillFavoritesPanel(favoritesPanel, widget)
     local pos_Favorite_Value = {x = 350, y = 8, w = 400, h = 40}
     local pos_Delete_Button = {x = 700, y = 8, w = 50, h = 40}
 
-    local line = favoritesPanel:addLine("")
-
     -- Create header for the battery panel
+    local line = favoritesPanel:addLine("")
     local field = form.addStaticText(line, pos_ModelID_Text, "ID")
     local field = form.addStaticText(line, pos_Favorite_Text, "Favorite")
 
@@ -97,15 +95,17 @@ local function fillFavoritesPanel(favoritesPanel, widget)
 end
 
 local function fillBatteryPanel(batteryPanel, widget)
-    -- Battery Panel Header
+    -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_Battery_Text = {x = 10, y = 8, w = 200, h = 40}
     local pos_Capacity_Text = {x = 530, y = 8, w = 100, h = 40}
     local pos_ModelID_Text = {x = 655, y = 8, w = 100, h = 40}
+    -- Value positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_Name_Value = {x = 8, y = 8, w = 400, h = 40}
     local pos_Capacity_Value = {x = 504, y = 8, w = 130, h = 40}
     local pos_ModelID_Value = {x = 642, y = 8, w = 50, h = 40}
     local pos_Options_Button = {x = 700, y = 8, w = 50, h = 40}
 
+    -- Create header for the battery panel
     local line = batteryPanel:addLine("")
     local field = form.addStaticText(line, pos_Battery_Text, "Name")
     local field = form.addStaticText(line, pos_Capacity_Text, "Capacity")
@@ -184,7 +184,7 @@ local function fillPrefsPanel(prefsPanel, widget)
     field:default(80)
 
     -- Create field to enable/disable battery voltage checking on connect
-    local line = prefsPanel:addLine("Battery Voltage Check")
+    local line = prefsPanel:addLine("Enable Battery Voltage Check")
     local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
     if checkBatteryVoltageOnConnect then
         local line = prefsPanel:addLine("Min Charged Voltage Per Cell")
