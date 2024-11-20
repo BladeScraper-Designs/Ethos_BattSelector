@@ -6,7 +6,7 @@ Tested on Ethos Version 1.5.18 only.<br>
 Read this ENTIRE Readme - it will answer most of your questions.
 
 # Features
-## On-Screen Battery Selection - No Sub-Menus or Manually Changing Calculations
+## On-Screen Battery Selection
 This widget creates an on-widget form for selecting the battery you'll be flying with.  Put this widget right on your home screen and quickly and easily choose your battery and let the widget do the rest.<br>
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Select.png?raw=true)
 
