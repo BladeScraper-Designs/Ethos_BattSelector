@@ -31,7 +31,7 @@ Drop down the "Batteries" expansion panel and add/remove batteries as needed.  G
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Batteries_Options.png?raw=true)
 
 ## Favorites
-See [Favorites](##-rotorflight-model-id-telemetry-integration-(favorites)) for more info.<br>
+See [Favorites](##-rotorflight-model-id-telemetry-integration-favorites) for more info.<br>
 
 # Preferences
 ## Use Capacity
