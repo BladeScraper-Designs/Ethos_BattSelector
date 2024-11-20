@@ -4,13 +4,9 @@
 
 -- Known Issues:
 -- 1. If you change models to another model with BattSelector, the Remaining Sensor will not function.
--- 2. If you change models to another model with BattSelector, the matchingBatteries list (and therefore widget choiceField) will not update.
--- 3. You have to change ModelID for a battery one at a time because it refreshes the form immediately, which causes the numberField to become deselected.
+-- 2. If you change models to another model with BattSelector, the matchingBatteries list (and therefore widget choiceField) will not update. 
 
 -- Restarting the radio makes 1 and 2 work again, but I'd like to figure out *why* it happens and fix it properly at some point.
-
--- 3 is a limitation of the way the form is currently built, and I'm not sure how to fix it tbh.  
--- It's necessary to keep the Favorites tab updated when you change the ID of a battery, but can be inconvenient.
 
 local useDebug = {
     fillBatteryPanel = false,
@@ -24,14 +20,16 @@ local useDebug = {
 }
 
 local numBatts
-local flyTo
+local useCapacity
 local Batteries = {}
 
 local favoritesPanel
 local batteryPanel
+local prefsPanel
 
 local rebuildForm = false
 local rebuildWidget = false
+local rebuildPrefs = false
 
 local tlmActive
 
@@ -130,11 +128,13 @@ local function fillBatteryPanel(batteryPanel, widget)
         end)
         field:suffix("mAh")
         field:step(100)
+        field:enableInstantChange(false)
         local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value)
             Batteries[i].modelID = value
             rebuildForm = true
         end)
         field:default(0)
+        field:enableInstantChange(false)
         local field = form.addTextButton(line, pos_Options_Button, "...", function()
             local buttons = {
                 {label = "Cancel", action = function() return true end},
@@ -171,6 +171,29 @@ local function fillBatteryPanel(batteryPanel, widget)
     end)
 end
 
+
+local checkBatteryVoltageOnConnect
+local minChargedCellVoltage
+
+-- Settings Panel
+local function fillPrefsPanel(prefsPanel, widget)
+    print("fillingPrefsPanel")
+    local line = prefsPanel:addLine("Use Capacity")
+    local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity end, function(value) useCapacity = value end)
+    field:suffix("%")
+    field:default(80)
+
+    -- Create field to enable/disable battery voltage checking on connect
+    local line = prefsPanel:addLine("Battery Voltage Check")
+    local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
+    if checkBatteryVoltageOnConnect then
+        local line = prefsPanel:addLine("Min Charged Voltage Per Cell")
+        local field = form.addNumberField(line, nil, 400, 420, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
+        field:decimals(2)
+        field:suffix("V")
+    end
+end
+
 -- Alerts Panel, commented out for now as not in use
 -- local function fillAlertsPanel(alertsPanel, widget)
 --     local line = alertsPanel:addLine("Eventually")
@@ -180,7 +203,7 @@ local voltageSensor
 local voltageDialogDismissed = false
 local batteryConnectTime
 local doneVoltageCheck = false
-local checkBatteryVoltageOnConnect
+local doHaptic = true
 
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck(widget)
@@ -204,11 +227,10 @@ local function doBatteryVoltageCheck(widget)
 
         if currentVoltage ~= nil then
             -- Minimum and maximum voltages per cell
-            local minChargedCellVoltage, maxChargedCellVoltage = 4.15, 4.35 -- Voltage per cell (used for estimation)
     
             local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
             
-            if currentVoltage >= estimatedCells * maxChargedCellVoltage then
+            if currentVoltage >= estimatedCells * 4.35 then
                 estimatedCells = estimatedCells + 1
             end
 
@@ -225,6 +247,9 @@ local function doBatteryVoltageCheck(widget)
                     voltageDialogDismissed = true 
                     return true 
                 end}}
+            if doHaptic then
+            system.playHaptic("- . - . - . - .")
+            end
             form.openDialog({
                 title = "Low Battery Voltage",
                 message = "Battery may not be charged!",
@@ -411,9 +436,9 @@ local function wakeup(widget)
         end
         -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
         local newmAh = getmAh()
-        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil and flyTo ~= nil then
+        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil and useCapacity ~= nil then
             if newmAh ~= lastmAh then
-                local usablemAh = Batteries[selectedBattery].capacity * (flyTo / 100)
+                local usablemAh = Batteries[selectedBattery].capacity * (useCapacity / 100)
                 newPercent = 100 - (newmAh / usablemAh) * 100
                 if newPercent < 0 then newPercent = 0 end
                 lastmAh = newmAh
@@ -438,28 +463,33 @@ local function wakeup(widget)
             lastModelID = currentModelID
             rebuildMatching = true
         end
-
-        -- If the rebuildMatching flag is true, refresh the matchingBatteries list and rebuild the widget
-        if rebuildMatching then 
-            refreshMatchingBatteries()
-            rebuildMatching = false
-            rebuildWidget = true
-        end
-
-        -- Rebuild form and widget if needed. This is done outside of the 1s looptime so that the form/widget updates instantly when required
-        if rebuildForm then
-            batteryPanel:clear()
-            fillBatteryPanel(batteryPanel, widget)
-            favoritesPanel:clear()
-            fillFavoritesPanel(favoritesPanel, widget)
-            rebuildForm = false
-        end
-
-        if rebuildWidget then
-            build(widget)
-            rebuildWidget = false
-        end
         lastTime = currentTime
+    end
+    -- If the rebuildMatching flag is true, refresh the matchingBatteries list and rebuild the widget
+    if rebuildMatching then 
+        refreshMatchingBatteries()
+        rebuildMatching = false
+        rebuildWidget = true
+    end
+
+    -- Rebuild form and widget if needed. This is done outside of the 1s looptime so that the form/widget updates instantly when required
+    if rebuildForm then
+        batteryPanel:clear()
+        fillBatteryPanel(batteryPanel, widget)
+        favoritesPanel:clear()
+        fillFavoritesPanel(favoritesPanel, widget)
+        rebuildForm = false
+    end
+
+    if rebuildWidget then
+        build(widget)
+        rebuildWidget = false
+    end
+
+    if rebuildPrefs then
+        prefsPanel:clear()
+        fillPrefsPanel(prefsPanel, widget)
+        rebuildPrefs = false
     end
 
     if useDebug.wakeup then
@@ -480,15 +510,9 @@ local function configure(widget)
     favoritesPanel:open(false)
     fillFavoritesPanel(favoritesPanel, widget)
 
-    -- Create field for entering desired "fly-to" percentage (80% typical)
-    local line = form.addLine("Use Capacity")
-    local field = form.addNumberField(line, nil, 50, 100, function() return flyTo end, function(value) flyTo = value end)
-    field:suffix("%")
-    field:default(80)
-
-    -- Create field to enable/disable battery voltage checking on connect
-    local line = form.addLine("Battery Voltage Check")
-    local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue end)
+    prefsPanel = form.addExpansionPanel("Preferences")
+    prefsPanel:open(false)
+    fillPrefsPanel(prefsPanel, widget)
 
     -- Alerts Panel.  Commented out for now as not in use
     -- local alertsPanel
@@ -500,7 +524,7 @@ end
 
 local function read(widget) -- Read configuration from storage
     numBatts = storage.read("numBatts") or 0
-    flyTo = storage.read("flyTo") or 80
+    useCapacity = storage.read("useCapacity") or 80
     Batteries = {}
     if numBatts > 0 then
         for i = 1, numBatts do
@@ -517,12 +541,15 @@ local function read(widget) -- Read configuration from storage
         end
     end
     checkBatteryVoltageOnConnect = storage.read("checkBatteryVoltageOnConnect") or false
+    if checkBatteryVoltageOnConnect then
+        minChargedCellVoltage = storage.read("minChargedCellVoltage") or 4.15
+    end
 end
 
 
 local function write(widget) -- Write configuration to storage
     storage.write("numBatts", numBatts)
-    storage.write("flyTo", flyTo)
+    storage.write("useCapacity", useCapacity)
     if numBatts > 0 then
         for i = 1, numBatts do
             storage.write("Battery" .. i .. "_name", Batteries[i].name)
@@ -532,6 +559,9 @@ local function write(widget) -- Write configuration to storage
         end
     end
     storage.write("checkBatteryVoltageOnConnect", checkBatteryVoltageOnConnect)
+    if checkBatteryVoltageOnConnect then
+        storage.write("minChargedCellVoltage", minChargedCellVoltage)
+    end
 end
 
 
