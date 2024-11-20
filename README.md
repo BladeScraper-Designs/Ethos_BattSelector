@@ -30,8 +30,8 @@ Drop down the "Batteries" expansion panel and add/remove batteries as needed.  G
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Batteries.png?raw=true)
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Batteries_Options.png?raw=true)
 
-## Fly-To Percentage
-You can configure a "fly-to" percentage, which is the percentage of the battery's nominal capacity you want to fly to.  When you hit 0% remaining, you've used that much.  Most people fly to 80-85%, and the default is 80%.<br>
+## Use Capacity
+You can configure a Use Capacity or "fly-to" percentage, which is the percentage of the battery's nominal capacity you want to consume before landing.  When you hit 0% remaining, you've used that much.  Most people fly to 80-85%, and the default is 80%.<br>
 ## Battery Voltage Check
 Enable/Disable this setting to enable/disable the Battery Voltage Check on Connect feature.
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Other.png?raw=true)
