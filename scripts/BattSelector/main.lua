@@ -300,13 +300,9 @@ local currentModelID
 
 local function build(widget)
     local w, h = lcd.getWindowSize()
-
-    print("Debug(build): Building widget based on matchingBatteries table:")
     if matchingBatteries and selectedBattery then
         for i, battery in ipairs(matchingBatteries) do
-            print("Debug(build): Battery " .. i .. ": Name = " .. battery[1] .. ", Index = " .. battery[2])
         end
-        print("Debug(build): Selected Battery: " .. (selectedBattery or "nil"))
     end
 
     -- Get Radio Version to determine field size
@@ -381,6 +377,17 @@ end
 local lastModelID = nil
 local rebuildMatching = true
 local lastTime = os.clock()
+local lastLoopTime = os.clock()
+
+-- Used to calculated the looptime of wakeup.  Only used for testing purposes.  Enable useDebug.wakeup to enable
+local function calculateLoopTime()
+    local currentTime = os.clock()
+    local elapsedTime = currentTime - lastLoopTime
+    lastLoopTime = currentTime
+    local looptimeMs = elapsedTime * 1000
+    local looptimeHz = 1 / elapsedTime
+    print(string.format("Loop time: %.0fms (%.3fHz)", looptimeMs, looptimeHz))
+end
 
 local function wakeup(widget)
     -- Get the current uptime
@@ -424,10 +431,7 @@ local function wakeup(widget)
                 currentModelID = math.floor(modelIDSensor:value()) or nil
             end
         end
-
-        rebuildMatching = true
-        rebuildWidget = true        
-
+        
             -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
         if currentModelID ~= lastModelID then
             selectedBattery = nil
@@ -456,6 +460,10 @@ local function wakeup(widget)
             rebuildWidget = false
         end
         lastTime = currentTime
+    end
+
+    if useDebug.wakeup then
+        calculateLoopTime()
     end
 end
 
