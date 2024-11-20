@@ -10,7 +10,7 @@ When modelID is not available, it lists all batteries.  Useful for non-Rotorflig
       The Remaining (Percent) sensor that it creates has a PhysID of 0x11.  0x11 was chosen because 0x10 is often used by other devices (e.g. Rotorflight), so by having the PhysID be 0x11, this allows both to coexist.
 
 ## Installation
-Method 1. Download the BattSelector.zip from the latest [Release](https://github.com/BladeScraper-Designs/Ethos_BattSelector/releases) and use Ethos Suite LUA Development tools to install it.<br>
+Method 1. Download BattSelector.zip from the latest [Release](https://github.com/BladeScraper-Designs/Ethos_BattSelector/releases) and use Ethos Suite LUA Development tools to install it.<br>
 Method 2. Download [main.lua](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/scripts/BattSelector/main.lua) directly and place it in a folder called BattSelector in your scripts directory. 
 
 ## Features
