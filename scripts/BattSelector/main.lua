@@ -166,7 +166,7 @@ local function fillBatteryPanel(batteryPanel, widget)
     local line = batteryPanel:addLine("")
     local field = form.addTextButton(line, pos_Add_Button, "Add New", function()
         numBatts = numBatts + 1
-        Batteries[numBatts] = {name = "", capacity = 0, modelID = 0}
+        Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
         rebuildForm = true
     end)
 end
@@ -479,17 +479,20 @@ local function wakeup(widget)
         favoritesPanel:clear()
         fillFavoritesPanel(favoritesPanel, widget)
         rebuildForm = false
+        print("Rebuilding form")
     end
 
     if rebuildWidget then
         build(widget)
         rebuildWidget = false
+        print("Rebuilding widget")
     end
 
     if rebuildPrefs then
         prefsPanel:clear()
         fillPrefsPanel(prefsPanel, widget)
         rebuildPrefs = false
+        print("Rebuilding prefs")
     end
 
     if useDebug.wakeup then
