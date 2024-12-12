@@ -132,6 +132,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value)
             Batteries[i].modelID = value
             rebuildForm = true
+            rebuildWidget = true
         end)
         field:default(0)
         field:enableInstantChange(false)
@@ -142,6 +143,7 @@ local function fillBatteryPanel(batteryPanel, widget)
                     table.remove(Batteries, i)
                     numBatts = numBatts - 1
                     rebuildForm = true
+                    rebuildWidget = true
                     return true
                 end},
                 {label = "Clone", action = function()
@@ -149,6 +151,7 @@ local function fillBatteryPanel(batteryPanel, widget)
                     table.insert(Batteries, newBattery)
                     numBatts = numBatts + 1
                     rebuildForm = true
+                    rebuildWidget = true
                     return true
                 end}
             }
@@ -168,6 +171,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         numBatts = numBatts + 1
         Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
         rebuildForm = true
+        rebuildWidget = true
     end)
 end
 
@@ -474,6 +478,7 @@ local function wakeup(widget)
 
     -- Rebuild form and widget if needed. This is done outside of the 1s looptime so that the form/widget updates instantly when required
     if rebuildForm then
+        refreshMatchingBatteries()
         batteryPanel:clear()
         fillBatteryPanel(batteryPanel, widget)
         favoritesPanel:clear()
@@ -486,6 +491,7 @@ local function wakeup(widget)
         build(widget)
         rebuildWidget = false
         print("Rebuilding widget")
+        refreshMatchingBatteries()
     end
 
     if rebuildPrefs then
