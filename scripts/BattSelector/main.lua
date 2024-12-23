@@ -72,7 +72,7 @@ local function fillFavoritesPanel(favoritesPanel, widget)
 
         -- Create Favorite picker field
         local matchingNames = {}
-        for j = 1, #uniqueIDs do
+        for j = 1, numBatts do
             if Batteries[j].modelID == id then
                 matchingNames[#matchingNames + 1] = {Batteries[j].name, j}
             end
@@ -150,12 +150,14 @@ local function fillBatteryPanel(batteryPanel, widget)
         local line = batteryPanel:addLine("")
         local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName)
             Batteries[i].name = newName
-            favoritesPanel:clear()
-            fillFavoritesPanel(favoritesPanel, widget)
-            imagePanel:clear()
-            fillImagePanel(imagePanel, widget)
+            -- The below 4 lines make the radio go into EM and simulator crashes, dunno why.  Commented out for now
+            -- batteryPanel:clear()
+            -- fillBatteryPanel(batteryPanel, widget)
+            -- favoritesPanel:clear()
+            -- fillFavoritesPanel(favoritesPanel, widget)
             rebuildWidget = true
         end)
+
         local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value)
             Batteries[i].capacity = value
             rebuildWidget = true
