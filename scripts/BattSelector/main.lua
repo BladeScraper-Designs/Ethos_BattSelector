@@ -10,7 +10,7 @@
 
 local useDebug = {
     fillBatteryPanel = false,
-    images = true,
+    images = false,
     updateRemainingSensor = false,
     getmAh = false,
     create = false,
@@ -20,7 +20,7 @@ local useDebug = {
     configure = false
 }
 
-local numBatts
+local numBatts = 0
 local useCapacity
 local Batteries = {}
 local uniqueIDs = {}
@@ -31,7 +31,6 @@ local imagePanel
 local batteryPanel
 local prefsPanel
 
-local rebuildForm = false
 local rebuildWidget = false
 local rebuildPrefs = false
 
@@ -39,7 +38,6 @@ local tlmActive
 local currentModelID
 
 -- Favorites Panel in Configure
-
 local function fillFavoritesPanel(favoritesPanel, widget)
     -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_ModelID_Text = {x = 10, y = 8, w = 200, h = 40}
@@ -120,6 +118,7 @@ local function fillImagePanel(imagePanel, widget)
 
     if useDebug.images then
         print("Images: ")
+        print("Default Image: " .. defaultImage)
         for k, v in pairs(Images) do
             print("ID: " .. k, "Image: " .. v)
         end
@@ -151,7 +150,10 @@ local function fillBatteryPanel(batteryPanel, widget)
         local line = batteryPanel:addLine("")
         local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName)
             Batteries[i].name = newName
-            rebuildForm = true
+            favoritesPanel:clear()
+            fillFavoritesPanel(favoritesPanel, widget)
+            imagePanel:clear()
+            fillImagePanel(imagePanel, widget)
             rebuildWidget = true
         end)
         local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value)
@@ -160,10 +162,14 @@ local function fillBatteryPanel(batteryPanel, widget)
         end)
         field:suffix("mAh")
         field:step(100)
+        field:default(0)
         field:enableInstantChange(false)
         local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value)
             Batteries[i].modelID = value
-            rebuildForm = true
+            favoritesPanel:clear()
+            fillFavoritesPanel(favoritesPanel, widget)
+            imagePanel:clear()
+            fillImagePanel(imagePanel, widget)
             rebuildWidget = true
         end)
         field:default(0)
@@ -174,7 +180,10 @@ local function fillBatteryPanel(batteryPanel, widget)
                 {label = "Delete", action = function()
                     table.remove(Batteries, i)
                     numBatts = numBatts - 1
-                    rebuildForm = true
+                    batteryPanel:clear()
+                    fillBatteryPanel(batteryPanel, widget)
+                    favoritesPanel:clear()
+                    fillFavoritesPanel(favoritesPanel, widget)
                     rebuildWidget = true
                     return true
                 end},
@@ -182,7 +191,10 @@ local function fillBatteryPanel(batteryPanel, widget)
                     local newBattery = {name = Batteries[i].name, capacity = Batteries[i].capacity, modelID = Batteries[i].modelID, favorite = false}
                     table.insert(Batteries, newBattery)
                     numBatts = numBatts + 1
-                    rebuildForm = true
+                    favoritesPanel:clear()
+                    fillFavoritesPanel(favoritesPanel, widget)
+                    imagePanel:clear()
+                    fillImagePanel(imagePanel, widget)
                     rebuildWidget = true
                     return true
                 end}
@@ -202,7 +214,12 @@ local function fillBatteryPanel(batteryPanel, widget)
     local field = form.addTextButton(line, pos_Add_Button, "Add New", function()
         numBatts = numBatts + 1
         Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
-        rebuildForm = true
+        batteryPanel:clear()
+        fillBatteryPanel(batteryPanel, widget)
+        favoritesPanel:clear()
+        fillFavoritesPanel(favoritesPanel, widget)
+        imagePanel:clear()
+        fillImagePanel(imagePanel, widget)
         rebuildWidget = true
     end)
 end
@@ -509,19 +526,6 @@ local function wakeup(widget)
         rebuildWidget = true
     end
 
-    -- Rebuild form and widget if needed. This is done outside of the 1s looptime so that the form/widget updates instantly when required
-    if rebuildForm then
-        refreshMatchingBatteries()
-        batteryPanel:clear()
-        fillBatteryPanel(batteryPanel, widget)
-        favoritesPanel:clear()
-        fillFavoritesPanel(favoritesPanel, widget)
-        imagePanel:clear()
-        fillImagePanel(imagePanel, widget)
-        rebuildForm = false
-        print("Rebuilding form")
-    end
-
     if rebuildWidget then
         build(widget)
         rebuildWidget = false
@@ -544,6 +548,9 @@ end
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 local function configure(widget)
+    if numBatts == nil then
+        numBatts = 0
+    end
     -- Fill Batteries panel
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
@@ -568,7 +575,6 @@ local function configure(widget)
     -- alertsPanel:open(false)
     -- fillAlertsPanel(alertsPanel, widget)
 end
-
 
 local function read(widget) -- Read configuration from storage
     numBatts = storage.read("numBatts") or 0
