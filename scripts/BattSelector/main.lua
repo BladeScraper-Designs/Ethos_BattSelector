@@ -10,6 +10,7 @@
 
 local useDebug = {
     fillBatteryPanel = false,
+    images = true,
     updateRemainingSensor = false,
     getmAh = false,
     create = false,
@@ -22,8 +23,11 @@ local useDebug = {
 local numBatts
 local useCapacity
 local Batteries = {}
+local uniqueIDs = {}
+local Images = {}
 
 local favoritesPanel
+local imagePanel
 local batteryPanel
 local prefsPanel
 
@@ -32,9 +36,10 @@ local rebuildWidget = false
 local rebuildPrefs = false
 
 local tlmActive
+local currentModelID
 
 -- Favorites Panel in Configure
-local uniqueIDs = {}
+
 local function fillFavoritesPanel(favoritesPanel, widget)
     -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_ModelID_Text = {x = 10, y = 8, w = 200, h = 40}
@@ -49,29 +54,27 @@ local function fillFavoritesPanel(favoritesPanel, widget)
     local field = form.addStaticText(line, pos_ModelID_Text, "ID")
     local field = form.addStaticText(line, pos_Favorite_Text, "Favorite")
 
-    -- Create a list of unique Model IDs
-    local IDs = {}
-    local uniqueIDs = {}
 
+    uniqueIDs = {}
+    local seen = {}
     for i = 1, #Batteries do
         local id = Batteries[i].modelID
-        if not uniqueIDs[id] then
-            uniqueIDs[id] = true
-            table.insert(IDs, id)
+        if not seen[id] then
+            seen[id] = true
+            table.insert(uniqueIDs, id)
         end
     end
 
     -- List out available Model IDs in the Favorites panel
-    for i = 1, #IDs do
+    for i, id in ipairs(uniqueIDs) do
         local line = favoritesPanel:addLine("")
-        local id = IDs[i]
 
         -- Create Model ID field
         local field = form.addStaticText(line, pos_ModelID_Value, id)
 
         -- Create Favorite picker field
         local matchingNames = {}
-        for j = 1, #Batteries do
+        for j = 1, #uniqueIDs do
             if Batteries[j].modelID == id then
                 matchingNames[#matchingNames + 1] = {Batteries[j].name, j}
             end
@@ -91,6 +94,35 @@ local function fillFavoritesPanel(favoritesPanel, widget)
                 end
             end
         end)
+    end
+end
+
+local defaultImage
+local function fillImagePanel(imagePanel, widget)
+    local line = imagePanel:addLine("Default Image")
+    local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
+        return defaultImage or ""
+    end, function(newValue)
+        defaultImage = newValue
+    end)
+
+    -- List out available Model IDs in the Favorites panel
+    for i, id in ipairs(uniqueIDs) do
+        local line = imagePanel:addLine("ID " .. uniqueIDs[i] .. " Image")
+        local id = uniqueIDs[i]
+
+        local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
+            return Images[id] or ""
+        end, function(newValue)
+            Images[id] = newValue
+        end)
+    end
+
+    if useDebug.images then
+        print("Images: ")
+        for k, v in pairs(Images) do
+            print("ID: " .. k, "Image: " .. v)
+        end
     end
 end
 
@@ -325,7 +357,6 @@ end
 local formCreated = false
 local selectedBattery
 local matchingBatteries
-local currentModelID
 
 local function build(widget)
     local w, h = lcd.getWindowSize()
@@ -429,6 +460,7 @@ local function wakeup(widget)
             voltageDialogDismissed = false
             doneVoltageCheck = false
             batteryConnectTime = nil
+            model.bitmap(defaultImage)
             resetDone = true
         elseif tlmActive then
             resetDone = false
@@ -465,6 +497,7 @@ local function wakeup(widget)
         if currentModelID ~= lastModelID then
             selectedBattery = nil
             lastModelID = currentModelID
+            model.bitmap(Images[currentModelID] or defaultImage)
             rebuildMatching = true
         end
         lastTime = currentTime
@@ -483,6 +516,8 @@ local function wakeup(widget)
         fillBatteryPanel(batteryPanel, widget)
         favoritesPanel:clear()
         fillFavoritesPanel(favoritesPanel, widget)
+        imagePanel:clear()
+        fillImagePanel(imagePanel, widget)
         rebuildForm = false
         print("Rebuilding form")
     end
@@ -519,6 +554,10 @@ local function configure(widget)
     favoritesPanel:open(false)
     fillFavoritesPanel(favoritesPanel, widget)
 
+    imagePanel = form.addExpansionPanel("Images")
+    imagePanel:open(false)
+    fillImagePanel(imagePanel, widget)
+
     prefsPanel = form.addExpansionPanel("Preferences")
     prefsPanel:open(false)
     fillPrefsPanel(prefsPanel, widget)
@@ -549,9 +588,26 @@ local function read(widget) -- Read configuration from storage
             }
         end
     end
+    local uniqueIDs = {}
+    local seen = {}
+    for i = 1, #Batteries do
+        local id = Batteries[i].modelID
+        if not seen[id] then
+            seen[id] = true
+            table.insert(uniqueIDs, id)
+        end
+    end
+
     checkBatteryVoltageOnConnect = storage.read("checkBatteryVoltageOnConnect") or false
     if checkBatteryVoltageOnConnect then
         minChargedCellVoltage = storage.read("minChargedCellVoltage") or 4.15
+    end
+
+    defaultImage = storage.read("defaultImage")
+    model.bitmap(defaultImage)
+    Images = {}
+    for i = 1, #uniqueIDs do
+        Images[uniqueIDs[i]] = storage.read("Images" .. i)
     end
 end
 
@@ -570,6 +626,11 @@ local function write(widget) -- Write configuration to storage
     storage.write("checkBatteryVoltageOnConnect", checkBatteryVoltageOnConnect)
     if checkBatteryVoltageOnConnect then
         storage.write("minChargedCellVoltage", minChargedCellVoltage)
+    end
+    
+    storage.write("defaultImage", defaultImage)
+    for i = 1, #uniqueIDs do
+        storage.write("Images" .. i, Images[uniqueIDs[i]])
     end
 end
 
