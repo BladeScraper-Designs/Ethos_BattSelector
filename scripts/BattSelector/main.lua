@@ -388,10 +388,10 @@ local function build(widget)
     local radio = system.getVersion()
 
     -- Set form size based on radio type
-    if string.find(radio.board, "X20") then
+    if string.find(radio.board, "X20") or string.find(radio.board, "X18R") or string.find(radio.board, "X18RS") then
         fieldHeight = 40
         fieldWidth = 145
-    elseif string.find(radio.board, "X18") then
+    elseif string.find(radio.board, "X18") or string.find(radio.board, "X18S") then
         fieldHeight = 30
         fieldWidth = 100
     else
@@ -471,7 +471,6 @@ end
 local function wakeup(widget)
     -- Get the current uptime
     local currentTime = os.clock()
-
     if currentTime - lastTime >= 1 then
         tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
         -- Reset all doBatteryVoltageCheck parameters when telemetry becomes inactive so that it can run again on next battery connect
@@ -479,11 +478,9 @@ local function wakeup(widget)
             voltageDialogDismissed = false
             doneVoltageCheck = false
             batteryConnectTime = nil
-            model.bitmap(defaultImage)
             resetDone = true
         elseif tlmActive then
             resetDone = false
-            model.bitmap(Images[currentModelID] or defaultImage)
         end
 
         -- If telemetry is active and voltage check is enabled, run check if it hasn't been done yet
@@ -500,7 +497,9 @@ local function wakeup(widget)
                 lastmAh = newmAh
             end
         end
+
         updateRemainingSensor(widget) -- Update the remaining sensor
+        
         -- Check for modelID sensor presence and its value
         if modelIDSensor == nil then 
             modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
@@ -512,8 +511,18 @@ local function wakeup(widget)
                 currentModelID = math.floor(modelIDSensor:value()) or nil
             end
         end
+
+        -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
+        if tlmActive and currentModelID and Images[currentModelID] then
+            if model.bitmap() ~= "BITMAPS:/models/" .. Images[currentModelID] then
+                model.bitmap(Images[currentModelID])
+                print("Setting model image to " .. (Images[currentModelID]))
+            end
+        else 
+            model.bitmap(defaultImage)
+        end
         
-            -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
+        -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
         if currentModelID ~= lastModelID then
             selectedBattery = nil
             lastModelID = currentModelID 
@@ -521,6 +530,7 @@ local function wakeup(widget)
         end
         lastTime = currentTime
     end
+
     -- If the rebuildMatching flag is true, refresh the matchingBatteries list and rebuild the widget
     if rebuildMatching then 
         refreshMatchingBatteries()
@@ -598,7 +608,7 @@ local function read(widget) -- Read configuration from storage
     end
     local uniqueIDs = {}
     local seen = {}
-    for i = 1, #Batteries do
+    for i = 1, numBatts do
         local id = Batteries[i].modelID
         if not seen[id] then
             seen[id] = true
@@ -613,9 +623,11 @@ local function read(widget) -- Read configuration from storage
 
     defaultImage = storage.read("defaultImage")
     model.bitmap(defaultImage)
+
     Images = {}
     for i = 1, #uniqueIDs do
-        Images[uniqueIDs[i]] = storage.read("Images" .. i)
+        local id = uniqueIDs[i]
+        Images[id] = storage.read("Images" .. id) or defaultImage
     end
 end
 
@@ -637,8 +649,8 @@ local function write(widget) -- Write configuration to storage
     end
     
     storage.write("defaultImage", defaultImage)
-    for i = 1, #uniqueIDs do
-        storage.write("Images" .. i, Images[uniqueIDs[i]])
+    for id, image in pairs(Images) do
+        storage.write("Images" .. id, image)
     end
 end
 
