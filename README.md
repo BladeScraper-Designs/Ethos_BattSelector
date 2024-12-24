@@ -19,6 +19,10 @@ If you're using this widget with Rotorflight 2.1, you can set the ModelID of eac
 As part of the Rotorflight Model ID Telemetry Integration, you can set up a "Favorite Battery" for each Model ID.  When a heli with the model ID is connected, it will default to your chosen Favorite battery for that ID.
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Configure_Favorites.png?raw=true)
 
+## Autmatic Model Bitmap
+Also as part of Model ID Integration, you can set a default bitmap as well as a bitmap for each Model ID and it will automatically change the model bitmap to the one you select.  When there is no telemetry nor no valid ModelID, it will use your selected Default image.
+![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/ID_Images.png?raw=true)
+
 ## Virtually Unlimited Batteries to Choose From
 Unlike the previous version of the widget, which was limited to 5 batteries, this widget's only limitation in how many batteries you can have is the space available on the EEPROM used to store battery data.
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Unlimited.png?raw=true)
