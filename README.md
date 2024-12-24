@@ -1,6 +1,5 @@
 # BattSelector V2 (WIP)
 On-widget battery selection and percent remaining calculator for FrSky Ethos.<br>
-Tested on Ethos Version 1.5.18 only.<br>
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Main.png?raw=true)
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/V2/img/Select.png?raw=true)<br>
 Read this ENTIRE Readme - it will answer most of your questions.
