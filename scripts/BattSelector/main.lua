@@ -483,6 +483,7 @@ local function wakeup(widget)
             resetDone = true
         elseif tlmActive then
             resetDone = false
+            model.bitmap(Images[currentModelID] or defaultImage)
         end
 
         -- If telemetry is active and voltage check is enabled, run check if it hasn't been done yet
@@ -515,8 +516,7 @@ local function wakeup(widget)
             -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
         if currentModelID ~= lastModelID then
             selectedBattery = nil
-            lastModelID = currentModelID
-            model.bitmap(Images[currentModelID] or defaultImage)
+            lastModelID = currentModelID 
             rebuildMatching = true
         end
         lastTime = currentTime
