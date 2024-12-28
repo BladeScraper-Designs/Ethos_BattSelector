@@ -355,6 +355,10 @@ local function getmAh()
                 end
             end
         end
+
+        if mAhSensor == nil then
+            print("No mAh sensor found!")
+        end
     end
     
     -- Return the value or 0 if no valid sensor was found
