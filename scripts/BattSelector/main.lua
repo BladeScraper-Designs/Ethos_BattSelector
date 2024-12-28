@@ -1,6 +1,5 @@
 -- Lua Battery Selector and Alarm widget
 -- BattSelect + ETHOS LUA configuration
--- Set to true to enable debug output for each function
 
 -- Known Issues:
 -- 1. If you change models to another model with BattSelector, the Remaining Sensor will not function.
@@ -8,9 +7,12 @@
 
 -- Restarting the radio makes 1 and 2 work again, but I'd like to figure out *why* it happens and fix it properly at some point.
 
+-- Set to true to enable debug output for each function as needed
 local useDebug = {
+    fillFavoritesPanel = true,
+    fillImagePanel = false,
     fillBatteryPanel = false,
-    images = false,
+    fillPrefsPanel = false,
     updateRemainingSensor = false,
     getmAh = false,
     create = false,
@@ -24,6 +26,7 @@ local numBatts = 0
 local useCapacity
 local Batteries = {}
 local uniqueIDs = {}
+local defaultImage
 local Images = {}
 
 local favoritesPanel
@@ -95,7 +98,7 @@ local function fillFavoritesPanel(favoritesPanel, widget)
     end
 end
 
-local defaultImage
+
 local function fillImagePanel(imagePanel, widget)
     local line = imagePanel:addLine("Default Image")
     local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
@@ -103,6 +106,10 @@ local function fillImagePanel(imagePanel, widget)
     end, function(newValue)
         defaultImage = newValue
     end)
+
+    if useDebug.fillImagePanel then
+        print("Debug(fillImagePanel):" .. "Default Image: " .. defaultImage)
+    end
 
     -- List out available Model IDs in the Favorites panel
     for i, id in ipairs(uniqueIDs) do
@@ -116,11 +123,9 @@ local function fillImagePanel(imagePanel, widget)
         end)
     end
 
-    if useDebug.images then
-        print("Images: ")
-        print("Default Image: " .. defaultImage)
-        for k, v in pairs(Images) do
-            print("ID: " .. k, "Image: " .. v)
+    if useDebug.fillImagePanel then
+        for i, id in ipairs(uniqueIDs) do
+        print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id])
         end
     end
 end
@@ -342,12 +347,8 @@ local mAhSensor
 
 local function getmAh()
     if mAhSensor == nil then
-        for member = 0, 25 do
-            local candidate = system.getSource({
-                category = CATEGORY_TELEMETRY_SENSOR,
-                member = member
-            })
-
+        for member = 0, 50 do
+            local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
             if candidate then
                 if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
                     mAhSensor = candidate
