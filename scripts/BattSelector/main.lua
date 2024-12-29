@@ -42,19 +42,10 @@ local currentModelID
 
 -- Favorites Panel in Configure
 local function fillFavoritesPanel(favoritesPanel, widget)
-    -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
-    local pos_ModelID_Text = {x = 10, y = 8, w = 200, h = 40}
-    local pos_Favorite_Text = {x = 530, y = 8, w = 100, h = 40}
     -- Value positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
     local pos_ModelID_Value = {x = 8, y = 8, w = 400, h = 40}
     local pos_Favorite_Value = {x = 350, y = 8, w = 400, h = 40}
     local pos_Delete_Button = {x = 700, y = 8, w = 50, h = 40}
-
-    -- Create header for the battery panel
-    local line = favoritesPanel:addLine("")
-    local field = form.addStaticText(line, pos_ModelID_Text, "ID")
-    local field = form.addStaticText(line, pos_Favorite_Text, "Favorite")
-
 
     uniqueIDs = {}
     local seen = {}
@@ -71,7 +62,7 @@ local function fillFavoritesPanel(favoritesPanel, widget)
         local line = favoritesPanel:addLine("")
 
         -- Create Model ID field
-        local field = form.addStaticText(line, pos_ModelID_Value, id)
+        local field = form.addStaticText(line, pos_ModelID_Value, ("ID " .. id .. " Favorite")) 
 
         -- Create Favorite picker field
         local matchingNames = {}
@@ -146,10 +137,6 @@ local function fillBatteryPanel(batteryPanel, widget)
     local field = form.addStaticText(line, pos_Battery_Text, "Name")
     local field = form.addStaticText(line, pos_Capacity_Text, "Capacity")
     local field = form.addStaticText(line, pos_ModelID_Text, "ID")
-
-    if numBatts == nil then 
-        numBatts = 0 
-    end
 
     for i = 1, numBatts do
         local line = batteryPanel:addLine("")
