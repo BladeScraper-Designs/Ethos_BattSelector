@@ -142,11 +142,6 @@ local function fillBatteryPanel(batteryPanel, widget)
         local line = batteryPanel:addLine("")
         local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName)
             Batteries[i].name = newName
-            -- The below 4 lines make the radio go into EM and simulator crashes, dunno why.  Commented out for now
-            -- batteryPanel:clear()
-            -- fillBatteryPanel(batteryPanel, widget)
-            -- favoritesPanel:clear()
-            -- fillFavoritesPanel(favoritesPanel, widget)
             rebuildWidget = true
         end)
 
