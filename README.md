@@ -64,4 +64,5 @@ Method 2. Download [main.lua](https://github.com/BladeScraper-Designs/Ethos_Batt
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
   - Version 1.1 - Small Update.  Fixed/improved mAh sensor detection.
   - Version 1.2 - Removed % Display from Widget due to complications with Lua Forms.  Improved compatibility with Ethos 1.5.18
-  - Version 2.0 (WIP) - Massive refactor of the entire script.  Adds Battery naming, Model ID from Rotorflight, Favorites, Voltage Detection
+  - Version 2.0 - Massive refactor of the entire script.  Adds Battery naming, Model ID from Rotorflight, Favorites, Voltage Detection
+  - Version 2-2 Adds Image selection for model ID
