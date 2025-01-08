@@ -40,13 +40,12 @@ local rebuildPrefs = false
 local tlmActive
 local currentModelID
 
+-- Get Radio Version to determine field size
+local radio = system.getVersion()
+
 -- Favorites Panel in Configure
 local function fillFavoritesPanel(favoritesPanel, widget)
-    -- Value positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
-    local pos_ModelID_Value = {x = 8, y = 8, w = 400, h = 40}
-    local pos_Favorite_Value = {x = 350, y = 8, w = 400, h = 40}
-    local pos_Delete_Button = {x = 700, y = 8, w = 50, h = 40}
-
+    -- Create list of Unique IDs from on all Batteries' IDs
     uniqueIDs = {}
     local seen = {}
     for i = 1, #Batteries do
@@ -57,12 +56,9 @@ local function fillFavoritesPanel(favoritesPanel, widget)
         end
     end
 
-    -- List out available Model IDs in the Favorites panel
+    -- List out available unique Model IDs in the Favorites panel
     for i, id in ipairs(uniqueIDs) do
-        local line = favoritesPanel:addLine("")
-
-        -- Create Model ID field
-        local field = form.addStaticText(line, pos_ModelID_Value, ("ID " .. id .. " Favorite")) 
+        local line = favoritesPanel:addLine("ID " .. id .. " Favorite")
 
         -- Create Favorite picker field
         local matchingNames = {}
@@ -71,8 +67,7 @@ local function fillFavoritesPanel(favoritesPanel, widget)
                 matchingNames[#matchingNames + 1] = {Batteries[j].name, j}
             end
         end
-        local field = form.addChoiceField(line, pos_Favorite_Value,
-                                          matchingNames, function()
+        local field = form.addChoiceField(line, nil, matchingNames, function()
             for j = 1, #Batteries do
                 if Batteries[j].modelID == id and Batteries[j].favorite then
                     return j
@@ -121,31 +116,59 @@ local function fillImagePanel(imagePanel, widget)
     end
 end
 
+
 local function fillBatteryPanel(batteryPanel, widget)
-    -- Header text positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
-    local pos_Battery_Text = {x = 10, y = 8, w = 200, h = 40}
-    local pos_Capacity_Text = {x = 530, y = 8, w = 100, h = 40}
-    local pos_ModelID_Text = {x = 655, y = 8, w = 100, h = 40}
-    -- Value positions. Eventually I'll do math for different radios but for now I'm just hardcoding.
-    local pos_Name_Value = {x = 8, y = 8, w = 400, h = 40}
-    local pos_Capacity_Value = {x = 504, y = 8, w = 130, h = 40}
-    local pos_ModelID_Value = {x = 642, y = 8, w = 50, h = 40}
-    local pos_Options_Button = {x = 700, y = 8, w = 50, h = 40}
+    local pos_header_battery
+    local pos_header_capacity
+    local pos_header_id
+    local pos_value_name
+    local pos_value_capacity
+    local pos_value_id
+    local pos_options_button
+    local pos_add_button
+
+    if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
+        -- Header text positions
+        pos_header_battery = {x = 10, y = 8, w = 200, h = 40}
+        pos_header_capacity = {x = 530, y = 8, w = 100, h = 40}
+        pos_header_id = {x = 655, y = 8, w = 100, h = 40}
+        -- Value positions
+        pos_value_name = {x = 8, y = 8, w = 400, h = 40}
+        pos_value_capacity = {x = 504, y = 8, w = 130, h = 40}
+        pos_value_id = {x = 642, y = 8, w = 50, h = 40}
+        pos_options_button = {x = 700, y = 8, w = 50, h = 40}
+        pos_add_button = {x = 642, y = 8, w = 108, h = 40}
+
+    elseif string.find(radio.board, "X18") or radio.board == "X18S" then
+        -- Header text positions
+        pos_header_battery = {x = 6, y = 6, w = 200, h = 30}
+        pos_header_capacity = {x = 300, y = 6, w = 100, h = 30}
+        pos_header_id = {x = 390, y = 6, w = 100, h = 30}
+        -- Value positions
+        pos_value_name = {x = 6, y = 6, w = 275, h = 30}
+        pos_value_capacity = {x = 288, y = 6, w = 85, h = 30}
+        pos_value_id = {x = 379, y = 6, w = 35, h = 30}
+        pos_options_button = {x = 420, y = 6, w = 35, h = 30}
+        pos_add_button = {x = 375, y = 6, w = 80, h = 30}
+
+    else
+        -- Currently not tested on other radios (X10,X12,X14)
+    end
 
     -- Create header for the battery panel
     local line = batteryPanel:addLine("")
-    local field = form.addStaticText(line, pos_Battery_Text, "Name")
-    local field = form.addStaticText(line, pos_Capacity_Text, "Capacity")
-    local field = form.addStaticText(line, pos_ModelID_Text, "ID")
+    local field = form.addStaticText(line, pos_header_battery, "Name")
+    local field = form.addStaticText(line, pos_header_capacity, "Capacity")
+    local field = form.addStaticText(line, pos_header_id, "ID")
 
     for i = 1, numBatts do
         local line = batteryPanel:addLine("")
-        local field = form.addTextField(line, pos_Name_Value, function() return Batteries[i].name end, function(newName)
+        local field = form.addTextField(line, pos_value_name, function() return Batteries[i].name end, function(newName)
             Batteries[i].name = newName
             rebuildWidget = true
         end)
 
-        local field = form.addNumberField(line, pos_Capacity_Value, 0, 20000, function() return Batteries[i].capacity end, function(value)
+        local field = form.addNumberField(line, pos_value_capacity, 0, 20000, function() return Batteries[i].capacity end, function(value)
             Batteries[i].capacity = value
             rebuildWidget = true
         end)
@@ -153,7 +176,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         field:step(100)
         field:default(0)
         field:enableInstantChange(false)
-        local field = form.addNumberField(line, pos_ModelID_Value, 0, 99, function() return Batteries[i].modelID end, function(value)
+        local field = form.addNumberField(line, pos_value_id, 0, 99, function() return Batteries[i].modelID end, function(value)
             Batteries[i].modelID = value
             favoritesPanel:clear()
             fillFavoritesPanel(favoritesPanel, widget)
@@ -163,7 +186,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         end)
         field:default(0)
         field:enableInstantChange(false)
-        local field = form.addTextButton(line, pos_Options_Button, "...", function()
+        local field = form.addTextButton(line, pos_options_button, "...", function()
             local buttons = {
                 {label = "Cancel", action = function() return true end},
                 {label = "Delete", action = function()
@@ -198,9 +221,8 @@ local function fillBatteryPanel(batteryPanel, widget)
         end)
     end
 
-    local pos_Add_Button = {x = 642, y = 8, w = 108, h = 40}
     local line = batteryPanel:addLine("")
-    local field = form.addTextButton(line, pos_Add_Button, "Add New", function()
+    local field = form.addTextButton(line, pos_add_button, "Add New", function()
         numBatts = numBatts + 1
         Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
         batteryPanel:clear()
@@ -226,10 +248,10 @@ local function fillPrefsPanel(prefsPanel, widget)
     field:default(80)
 
     -- Create field to enable/disable battery voltage checking on connect
-    local line = prefsPanel:addLine("Enable Battery Voltage Check")
+    local line = prefsPanel:addLine("Enable Voltage Check")
     local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
     if checkBatteryVoltageOnConnect then
-        local line = prefsPanel:addLine("Min Charged Voltage Per Cell")
+        local line = prefsPanel:addLine("Min Charged Volt/Cell")
         local field = form.addNumberField(line, nil, 400, 420, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
         field:decimals(2)
         field:suffix("V")
@@ -370,9 +392,6 @@ local function build(widget)
         for i, battery in ipairs(matchingBatteries) do
         end
     end
-
-    -- Get Radio Version to determine field size
-    local radio = system.getVersion()
 
     -- Set form size based on radio type
     if string.find(radio.board, "X20") or string.find(radio.board, "X18R") or string.find(radio.board, "X18RS") then
