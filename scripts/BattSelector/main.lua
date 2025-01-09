@@ -468,12 +468,12 @@ local function wakeup(widget)
     -- Get the current uptime
     local currentTime = os.clock()
 
-    if tlmActive then
+    if checkBatteryVoltageOnConnect and tlmActive then
         -- Only run the battery voltage check 3 seconds after telemetry becomes active to prevent reading voltage before Voltage telemetry is established and valid (nonzero)
         if currentTime - lastBattCheckTime >= 3 then
             lastBattCheckTime = currentTime
             -- If telemetry is active and voltage check is enabled, run check if it hasn't been done and dismissed yet
-            if checkBatteryVoltageOnConnect and not doneVoltageCheck and not voltageDialogDismissed then
+            if not doneVoltageCheck and not voltageDialogDismissed then
                 doBatteryVoltageCheck(widget)
             end
         end
