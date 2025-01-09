@@ -139,7 +139,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         pos_options_button = {x = 700, y = 8, w = 50, h = 40}
         pos_add_button = {x = 642, y = 8, w = 108, h = 40}
 
-    elseif string.find(radio.board, "X18") or radio.board == "X18S" then
+    elseif string.find(radio.board, "X18") or radio.board == "X18S" or radio.board == "TWXLITES" then
         -- Header text positions
         pos_header_battery = {x = 6, y = 6, w = 200, h = 30}
         pos_header_capacity = {x = 300, y = 6, w = 100, h = 30}
@@ -394,10 +394,10 @@ local function build(widget)
     end
 
     -- Set form size based on radio type
-    if string.find(radio.board, "X20") or string.find(radio.board, "X18R") or string.find(radio.board, "X18RS") then
+    if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
         fieldHeight = 40
         fieldWidth = 145
-    elseif string.find(radio.board, "X18") or string.find(radio.board, "X18S") then
+    elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITES" then
         fieldHeight = 30
         fieldWidth = 100
     else
