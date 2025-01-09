@@ -462,21 +462,25 @@ end
 local lastModelID = nil
 local rebuildMatching = true
 local lastTime = os.clock()
-local lastLoopTime = os.clock()
-
--- Used to calculated the looptime of wakeup.  Only used for testing purposes.  Enable useDebug.wakeup to enable
-local function calculateLoopTime()
-    local currentTime = os.clock()
-    local elapsedTime = currentTime - lastLoopTime
-    lastLoopTime = currentTime
-    local looptimeMs = elapsedTime * 1000
-    local looptimeHz = 1 / elapsedTime
-    print(string.format("Loop time: %.0fms (%.3fHz)", looptimeMs, looptimeHz))
-end
+local lastBattCheckTime = os.clock()
 
 local function wakeup(widget)
     -- Get the current uptime
     local currentTime = os.clock()
+
+    if tlmActive then
+        -- Only run the battery voltage check 3 seconds after telemetry becomes active to prevent reading voltage before Voltage telemetry is established and valid (nonzero)
+        if currentTime - lastBattCheckTime >= 3 then
+            lastBattCheckTime = currentTime
+            -- If telemetry is active and voltage check is enabled, run check if it hasn't been done and dismissed yet
+            if checkBatteryVoltageOnConnect and not doneVoltageCheck and not voltageDialogDismissed then
+                doBatteryVoltageCheck(widget)
+            end
+        end
+    else
+        lastBattCheckTime = currentTime -- Reset the timer when telemetry becomes inactive
+    end
+
     if currentTime - lastTime >= 1 then
         tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
         -- Reset all doBatteryVoltageCheck parameters when telemetry becomes inactive so that it can run again on next battery connect
@@ -489,10 +493,6 @@ local function wakeup(widget)
             resetDone = false
         end
 
-        -- If telemetry is active and voltage check is enabled, run check if it hasn't been done yet
-        if tlmActive and checkBatteryVoltageOnConnect and not doneVoltageCheck and not voltageDialogDismissed then
-            doBatteryVoltageCheck(widget)
-        end
         -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
         local newmAh = getmAh()
         if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil and useCapacity ~= nil then
@@ -545,10 +545,10 @@ local function wakeup(widget)
     end
 
     if rebuildWidget then
+        refreshMatchingBatteries()
         build(widget)
         rebuildWidget = false
         print("Rebuilding widget")
-        refreshMatchingBatteries()
     end
 
     if rebuildPrefs then
@@ -556,10 +556,6 @@ local function wakeup(widget)
         fillPrefsPanel(prefsPanel, widget)
         rebuildPrefs = false
         print("Rebuilding prefs")
-    end
-
-    if useDebug.wakeup then
-        calculateLoopTime()
     end
 end
 
