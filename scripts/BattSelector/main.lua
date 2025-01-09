@@ -9,10 +9,11 @@
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
-    fillFavoritesPanel = true,
+    fillFavoritesPanel = false,
     fillImagePanel = false,
     fillBatteryPanel = false,
     fillPrefsPanel = false,
+    doBatteryVoltageCheck = true,
     updateRemainingSensor = false,
     getmAh = false,
     create = false,
@@ -279,8 +280,8 @@ local function doBatteryVoltageCheck(widget)
         -- Check if voltage sensor exists, if not, get it
         if voltageSensor == nil then
             voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
+            
         end
-
         -- Get the current voltage reading
         local currentVoltage
         if voltageSensor ~= nil then
@@ -288,12 +289,9 @@ local function doBatteryVoltageCheck(widget)
         end
 
         local isCharged
-
         if currentVoltage ~= nil then
-            -- Minimum and maximum voltages per cell
-    
             local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
-            
+
             if currentVoltage >= estimatedCells * 4.35 then
                 estimatedCells = estimatedCells + 1
             end
