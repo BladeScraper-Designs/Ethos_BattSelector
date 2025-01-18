@@ -13,7 +13,7 @@ local useDebug = {
     fillImagePanel = false,
     fillBatteryPanel = false,
     fillPrefsPanel = false,
-    doBatteryVoltageCheck = true,
+    doBatteryVoltageCheck = false,
     updateRemainingSensor = false,
     getmAh = false,
     create = false,
@@ -87,16 +87,16 @@ end
 
 
 local function fillImagePanel(imagePanel, widget)
+    local debug = useDebug.fillImagePanel
+
     local line = imagePanel:addLine("Default Image")
     local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-        return defaultImage or ""
+        return defaultImage
     end, function(newValue)
         defaultImage = newValue
     end)
 
-    if useDebug.fillImagePanel then
-        print("Debug(fillImagePanel):" .. "Default Image: " .. defaultImage)
-    end
+    if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. defaultImage) end
 
     -- List out available Model IDs in the Favorites panel
     for i, id in ipairs(uniqueIDs) do
@@ -110,7 +110,7 @@ local function fillImagePanel(imagePanel, widget)
         end)
     end
 
-    if useDebug.fillImagePanel then
+    if debug then
         for i, id in ipairs(uniqueIDs) do
         print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id])
         end
@@ -239,10 +239,12 @@ end
 
 local checkBatteryVoltageOnConnect
 local minChargedCellVoltage
+local doHaptic
+local hapticPatterns = {{". . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . - - . - - .", 3}}
+local hapticPattern
 
 -- Settings Panel
 local function fillPrefsPanel(prefsPanel, widget)
-    print("fillingPrefsPanel")
     local line = prefsPanel:addLine("Use Capacity")
     local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity end, function(value) useCapacity = value end)
     field:suffix("%")
@@ -253,9 +255,21 @@ local function fillPrefsPanel(prefsPanel, widget)
     local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
     if checkBatteryVoltageOnConnect then
         local line = prefsPanel:addLine("Min Charged Volt/Cell")
-        local field = form.addNumberField(line, nil, 400, 420, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
+        local field = form.addNumberField(line, nil, 400, 430, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
         field:decimals(2)
         field:suffix("V")
+        field:enableInstantChange(false)
+        local line = prefsPanel:addLine("Haptic Warning")
+        local field = form.addBooleanField(line, nil, function() return doHaptic end, function(newValue) doHaptic = newValue rebuildPrefs = true end)
+        if doHaptic then 
+            if hapticPattern == nil then hapticPattern = 1 end
+            local line = prefsPanel:addLine("Haptic Pattern")
+            local field = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern end, function(newValue) hapticPattern = newValue end)
+        end
+    end
+
+    if useDebug.fillPrefsPanel then
+        print("fillingPrefsPanel")
     end
 end
 
@@ -264,61 +278,95 @@ end
 --     local line = alertsPanel:addLine("Eventually")
 -- end
 
+local cellSensor
 local voltageSensor
 local voltageDialogDismissed = false
-local batteryConnectTime
 local doneVoltageCheck = false
-local doHaptic = true
+local batteryConnectTime
 
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck(widget)
-    if batteryConnectTime == nil then
+    local debug = useDebug.doBatteryVoltageCheck
+    if debug then print("Debug(doBatteryVoltageCheck): Running Battery Voltage Check") end
+
+    local cellCount
+    local currentVoltage
+    local isCharged
+
+    if not batteryConnectTime then
         batteryConnectTime = os.clock()
     end
 
     if batteryConnectTime and (os.clock() - batteryConnectTime) <= 30 then
+        -- Check if cell count sensor exists (RF 2.2? only), if not, get it
+        if not cellSensor then
+            cellSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Cell Count"})
+            if cellSensor then
+                if debug then print("Debug(doBatteryVoltageCheck): RF Cell Count sensor found.  Continuing") end
+            else
+                if debug then print("Debug(doBatteryVoltageCheck): RF Cell Count sensor not found.  Proceeding with estimation from Voltage") end
+            end
+        end
+
         -- Check if voltage sensor exists, if not, get it
-        if voltageSensor == nil then
+        if not voltageSensor then
             voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
-            
-        end
-        -- Get the current voltage reading
-        local currentVoltage
-        if voltageSensor ~= nil then
-            currentVoltage = voltageSensor:value() or nil
-        end
-
-        local isCharged
-        if currentVoltage ~= nil then
-            local estimatedCells = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
-
-            if currentVoltage >= estimatedCells * 4.35 then
-                estimatedCells = estimatedCells + 1
+            if voltageSensor then 
+                if debug then print("Debug(doBatteryVoltageCheck): Voltage Sensor Found.  Continuing") end
+            else
+                if debug then print ("Debug(doBatteryVoltageCheck): Voltage sensor not found.  Exiting") end
+                return
             end
-
-            -- Calculate the fully charged voltage for the estimated number of cells
-            local chargedVoltage = estimatedCells * minChargedCellVoltage
-            
-            isCharged = currentVoltage >= chargedVoltage
+        end
+        
+        if cellSensor and voltageSensor then
+            currentVoltage = voltageSensor:value()
+            cellCount = math.floor(cellSensor:value())
+            isCharged = currentVoltage >= cellCount * minChargedCellVoltage 
             doneVoltageCheck = true
+        elseif voltageSensor then
+            currentVoltage = voltageSensor:value()
+            -- Estimate cell count based on voltage
+            cellCount = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
+            -- To prevent accidentally reading a very low battery as a lower cell count than actual, add 1 to cellCount if the voltage is higher than cellCount * 4.35 (HV battery max cell voltage)
+            if currentVoltage >= cellCount * 4.35 then
+                cellCount = cellCount + 1
+            end    
         end
-    
-        if isCharged == false and voltageDialogDismissed == false then
-            local buttons = {
-                {label = "OK", action = function() 
-                    voltageDialogDismissed = true 
-                    return true 
-                end}}
-            if doHaptic then
-            system.playHaptic("- . - . - . - .")
+
+        if cellCount == 0  then
+            cellCount = 1
+        end
+
+        if cellCount and currentVoltage then 
+            isCharged = currentVoltage >= cellCount * minChargedCellVoltage 
+            if debug then 
+                print("Debug(doBatteryVoltageCheck): Voltage Sensor Found.  Reading: " .. currentVoltage .. "V")
+                print("Debug(doBatteryVoltageCheck): Cell Count: " .. cellCount)
+                print("Debug(doBatteryVoltageCheck): Battery Charged: " .. tostring(isCharged)) 
             end
-            form.openDialog({
-                title = "Low Battery Voltage",
-                message = "Battery may not be charged!",
-                width = 325,
-                buttons = buttons,
-                options = TEXT_LEFT,
-            })
+
+            if isCharged == false and voltageDialogDismissed == false then
+                if debug then print ("Debug(doBatteryVoltageCheck): Battery not charged!  Popup dialog") end
+                local buttons = {
+                    {label = "OK", action = function()
+                        voltageDialogDismissed = true 
+                        if debug then print("Debug(doBatteryVoltageCheck): Voltage Dialog Dismissed") end
+                        return true 
+                    end}}
+                if doHaptic then
+                    if debug then print("Debug(doBatteryVoltageCheck): Playing Haptic") end
+                    system.playHaptic(hapticPatterns[hapticPattern][1])
+                end
+                form.openDialog({
+                    title = "Low Battery Voltage",
+                    message = "Battery may not be charged!",
+                    width = 325,
+                    buttons = buttons,
+                    options = TEXT_LEFT,
+                })
+            end
+            doneVoltageCheck = true 
         end
     end
 end
@@ -361,6 +409,7 @@ local function getmAh()
 
         if mAhSensor == nil then
             print("No mAh sensor found!")
+            return 0
         end
     end
     
@@ -463,6 +512,8 @@ local lastTime = os.clock()
 local lastBattCheckTime = os.clock()
 
 local function wakeup(widget)
+    local debug = useDebug.wakeup
+
     -- Get the current uptime
     local currentTime = os.clock()
 
@@ -472,10 +523,12 @@ local function wakeup(widget)
             lastBattCheckTime = currentTime
             -- If telemetry is active and voltage check is enabled, run check if it hasn't been done and dismissed yet
             if not doneVoltageCheck and not voltageDialogDismissed then
+                if debug then print ("Debug(wakeup): Running Battery Voltage Check") end
                 doBatteryVoltageCheck(widget)
             end
         end
     else
+        voltageDialogDismissed = false -- Reset the dialog dismissed flag when telemetry becomes inactive
         lastBattCheckTime = currentTime -- Reset the timer when telemetry becomes inactive
     end
 
@@ -502,28 +555,34 @@ local function wakeup(widget)
             end
         end
 
+        if debug then print ("Debug(wakeup): Updating Remaining Sensor") end
         updateRemainingSensor(widget) -- Update the remaining sensor
         
         -- Check for modelID sensor presence and its value
         if modelIDSensor == nil then 
             modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
             if modelIDSensor ~= nil and modelIDSensor:value() ~= nil then
-                currentModelID = math.floor(modelIDSensor:value()) or nil
+                currentModelID = math.floor(modelIDSensor:value())
             end
         else
             if modelIDSensor:value() ~= nil then
-                currentModelID = math.floor(modelIDSensor:value()) or nil
+                currentModelID = math.floor(modelIDSensor:value())
             end
         end
+            
+        local currentBitmapName = model.bitmap():match("([^/]+)$")
 
         -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
         if tlmActive and currentModelID and Images[currentModelID] then
-            if model.bitmap() ~= "BITMAPS:/models/" .. Images[currentModelID] then
+            if currentBitmapName ~= Images[currentModelID] then
                 model.bitmap(Images[currentModelID])
-                print("Setting model image to " .. (Images[currentModelID]))
+                if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
             end
-        else 
-            model.bitmap(defaultImage)
+        elseif not tlmActive and currentBitmapName ~= defaultImage then
+            if defaultImage then
+                model.bitmap(defaultImage)
+                if debug then print("Debug(wakeup): Setting model image to " .. defaultImage) end
+            end
         end
         
         -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
@@ -531,6 +590,7 @@ local function wakeup(widget)
             selectedBattery = nil
             lastModelID = currentModelID 
             rebuildMatching = true
+            if debug then print ("Debug(wakeup): Model ID changed.  Rebuilding matchingBatteries list") end
         end
         lastTime = currentTime
     end
@@ -546,14 +606,12 @@ local function wakeup(widget)
         refreshMatchingBatteries()
         build(widget)
         rebuildWidget = false
-        print("Rebuilding widget")
     end
 
     if rebuildPrefs then
         prefsPanel:clear()
         fillPrefsPanel(prefsPanel, widget)
         rebuildPrefs = false
-        print("Rebuilding prefs")
     end
 end
 
@@ -594,7 +652,7 @@ local function read(widget) -- Read configuration from storage
     Batteries = {}
     if numBatts > 0 then
         for i = 1, numBatts do
-            local name = storage.read("Battery" .. i .. "_name") or ""
+            local name = storage.read("Battery" .. i .. "_name") or "Battery " .. i
             local capacity = storage.read("Battery" .. i .. "_capacity") or 0
             local modelID = storage.read("Battery" .. i .. "_modelID") or 0
             local favorite = storage.read("Battery" .. i .. "_favorite") or false
@@ -618,16 +676,17 @@ local function read(widget) -- Read configuration from storage
 
     checkBatteryVoltageOnConnect = storage.read("checkBatteryVoltageOnConnect") or false
     if checkBatteryVoltageOnConnect then
-        minChargedCellVoltage = storage.read("minChargedCellVoltage") or 4.15
+        minChargedCellVoltage = storage.read("minChargedCellVoltage") or 415
+        doHaptic = storage.read("doHaptic") or false
+        hapticPattern = storage.read("hapticPattern") or 1
     end
-
-    defaultImage = storage.read("defaultImage")
-    model.bitmap(defaultImage)
+    
+    defaultImage = storage.read("defaultImage") or ""
 
     Images = {}
     for i = 1, #uniqueIDs do
         local id = uniqueIDs[i]
-        Images[id] = storage.read("Images" .. id) or defaultImage
+        Images[id] = storage.read("Images" .. id)
     end
 end
 
@@ -646,12 +705,12 @@ local function write(widget) -- Write configuration to storage
     storage.write("checkBatteryVoltageOnConnect", checkBatteryVoltageOnConnect)
     if checkBatteryVoltageOnConnect then
         storage.write("minChargedCellVoltage", minChargedCellVoltage)
+        storage.write("doHaptic", doHaptic)
+        if doHaptic then storage.write("hapticPattern", hapticPattern) end
     end
     
     storage.write("defaultImage", defaultImage)
-    for id, image in pairs(Images) do
-        storage.write("Images" .. id, image)
-    end
+    for id, image in pairs(Images) do storage.write("Images" .. id, image) end
 end
 
 
