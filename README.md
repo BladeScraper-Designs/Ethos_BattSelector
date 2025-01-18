@@ -48,7 +48,7 @@ Enable/Disable this setting to enable/disable the Battery Voltage Check on Conne
 
 ## Prerequisites
 1. You should have a mAh sensor from somewhere. Rotorflight, ESC with S.Port telemetry, or a calculated mAh sensor from a Current source. 
-      This script works by scanning the first 25 telemetry sensors and picks the first one that has the unit mAh.  If you have more than  one sensor with the unit mAh, it will only use the first one, so make sure the first one is the one you want being used for calculations.
+      This script works by scanning the telemetry sensors and picks the first one that has the unit mAh.  If you have more than one sensor with the unit mAh, it will only use the first one, so make sure the first one is the one you want being used for calculations.
 2. You do not need to have a Remaining (Percent) sensor from somewhere else.  This widget creates and updates its own Remaining (Percent) sensor, which you can then use for Alerts, Value display widgets, etc.
       The Remaining (Percent) sensor that it creates has a PhysID of 0x11.  0x11 was chosen because 0x10 is often used by other devices (e.g. Rotorflight), so by having the PhysID be 0x11, this allows both to coexist.
 3. If you want to use the optional Voltage Check On Connect feature, you need to have a Voltage sensor called "Voltage".
