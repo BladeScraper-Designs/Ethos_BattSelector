@@ -91,7 +91,7 @@ local function fillImagePanel(imagePanel, widget)
 
     local line = imagePanel:addLine("Default Image")
     local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-        return defaultImage
+        return defaultImage or ""
     end, function(newValue)
         defaultImage = newValue
     end)
@@ -361,7 +361,7 @@ local function doBatteryVoltageCheck(widget)
                 form.openDialog({
                     title = "Low Battery Voltage",
                     message = "Battery may not be charged!",
-                    width = 325,
+                    width = 350,
                     buttons = buttons,
                     options = TEXT_LEFT,
                 })
@@ -681,9 +681,7 @@ local function read(widget) -- Read configuration from storage
         hapticPattern = storage.read("hapticPattern") or 1
     end
     
-    defaultImage = storage.read("defaultImage") or ""
-
-    Images = {}
+    Images = { Default = storage.read("ImagesDefault") or "" }
     for i = 1, #uniqueIDs do
         local id = uniqueIDs[i]
         Images[id] = storage.read("Images" .. id)
@@ -709,8 +707,12 @@ local function write(widget) -- Write configuration to storage
         if doHaptic then storage.write("hapticPattern", hapticPattern) end
     end
     
-    storage.write("defaultImage", defaultImage)
-    for id, image in pairs(Images) do storage.write("Images" .. id, image) end
+    storage.write("ImagesDefault", Images.Default)
+    for id, image in pairs(Images) do
+        if id ~= "Default" then
+            storage.write("Images" .. id, image)
+        end
+    end
 end
 
 
