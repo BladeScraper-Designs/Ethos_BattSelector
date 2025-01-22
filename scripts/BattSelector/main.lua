@@ -429,7 +429,6 @@ local function create(widget)
     -- return
 end
 
-local formCreated = false
 local selectedBattery
 local matchingBatteries
 
@@ -461,8 +460,6 @@ local function build(widget)
         choiceField = form.addChoiceField(line, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
             selectedBattery = value 
         end)
-        -- Set the formCreated flag to true once it's created the first time
-        formCreated = true
     end
 end
 
