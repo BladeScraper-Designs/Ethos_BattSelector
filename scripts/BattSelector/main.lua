@@ -24,10 +24,9 @@ local useDebug = {
 }
 
 local numBatts = 0
-local useCapacity
+local useCapacity = 0
 local Batteries = {}
 local uniqueIDs = {}
-local defaultImage
 local Images = {}
 
 local favoritesPanel
@@ -38,8 +37,8 @@ local prefsPanel
 local rebuildWidget = false
 local rebuildPrefs = false
 
-local tlmActive
-local currentModelID
+local tlmActive = false
+local currentModelID = nil
 
 -- Get Radio Version to determine field size
 local radio = system.getVersion()
@@ -90,13 +89,9 @@ local function fillImagePanel(imagePanel, widget)
     local debug = useDebug.fillImagePanel
 
     local line = imagePanel:addLine("Default Image")
-    local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-        return defaultImage or ""
-    end, function(newValue)
-        defaultImage = newValue
-    end)
+    local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return Images.Default or "" end, function(newValue) Images.Default = newValue end)
 
-    if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. defaultImage) end
+    if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. Images.Default) end
 
     -- List out available Model IDs in the Favorites panel
     for i, id in ipairs(uniqueIDs) do
@@ -108,17 +103,15 @@ local function fillImagePanel(imagePanel, widget)
         end, function(newValue)
             Images[id] = newValue
         end)
-    end
-
-    if debug then
-        for i, id in ipairs(uniqueIDs) do
-        print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id])
-        end
+        if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id]) end
     end
 end
 
 
 local function fillBatteryPanel(batteryPanel, widget)
+    local debug = useDebug.fillBatteryPanel
+    if debug then print("Debug(fillBatteryPanel): Filling Battery Panel") end
+
     local pos_header_battery
     local pos_header_capacity
     local pos_header_id
@@ -139,8 +132,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         pos_value_id = {x = 642, y = 8, w = 50, h = 40}
         pos_options_button = {x = 700, y = 8, w = 50, h = 40}
         pos_add_button = {x = 642, y = 8, w = 108, h = 40}
-
-    elseif string.find(radio.board, "X18") or radio.board == "X18S" or radio.board == "TWXLITES" then
+    elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITE" or radio.board == "TWXLITES" then
         -- Header text positions
         pos_header_battery = {x = 6, y = 6, w = 200, h = 30}
         pos_header_capacity = {x = 300, y = 6, w = 100, h = 30}
@@ -151,7 +143,6 @@ local function fillBatteryPanel(batteryPanel, widget)
         pos_value_id = {x = 379, y = 6, w = 35, h = 30}
         pos_options_button = {x = 420, y = 6, w = 35, h = 30}
         pos_add_button = {x = 375, y = 6, w = 80, h = 30}
-
     else
         -- Currently not tested on other radios (X10,X12,X14)
     end
@@ -245,6 +236,9 @@ local hapticPattern
 
 -- Settings Panel
 local function fillPrefsPanel(prefsPanel, widget)
+    local debug = useDebug.fillPrefsPanel
+    if debug then print("Debug(fillPrefsPanel): Filling Preferences Panel") end
+
     local line = prefsPanel:addLine("Use Capacity")
     local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity end, function(value) useCapacity = value end)
     field:suffix("%")
@@ -429,79 +423,96 @@ local function create(widget)
     -- return
 end
 
-local selectedBattery
-local matchingBatteries
-
-local function build(widget)
-    local w, h = lcd.getWindowSize()
-    if matchingBatteries and selectedBattery then
-        for i, battery in ipairs(matchingBatteries) do
-        end
-    end
-
-    -- Set form size based on radio type
-    if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
-        fieldHeight = 40
-        fieldWidth = 145
-    elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITES" then
-        fieldHeight = 30
-        fieldWidth = 100
-    else
-        -- Currently not tested on other radios (X10,X12,X14)
-    end
-
-    if #Batteries > 0 and selectedBattery ~= nil then
-        local pos_x = (w / 2 - fieldWidth / 2)
-        local pos_y = (h / 2 - fieldHeight / 2)
-
-        -- Create form and add choice field for selecting battery
-        local choiceField
-        form.create()
-        choiceField = form.addChoiceField(line, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
-            selectedBattery = value 
-        end)
-    end
-end
 
 local lastmAh = 0
 local modelIDSensor
+local widgetInit = true
+local selectedBattery
+local matchingBatteries
+local fieldHeight
+local fieldWidth
 
-local function refreshMatchingBatteries()
+local function build(widget)
+    local debug = useDebug.build
+
+    local w, h = lcd.getWindowSize()
+
+    -- Refresh the matchingBatteries list based on currentModelID
     matchingBatteries = {}
-
     if #Batteries > 0 then
-        if modelIDSensor ~= nil then
-            if currentModelID == nil then
-                for i = 1, #Batteries do
+        if currentModelID then
+            if debug then print ("Debug(build): Current Model ID: " .. currentModelID) end
+            for i = 1, #Batteries do
+                if Batteries[i].modelID == currentModelID then
                     matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
                 end
-            else
-                for i = 1, #Batteries do
-                    if Batteries[i].modelID == currentModelID then
-                        matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
-                    end
+            end
+            for i = 1, #Batteries do
+                if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
+                    selectedBattery = i
+                    break
                 end
             end
         else
             for i = 1, #Batteries do
                 matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
             end
-        end
-
-        if selectedBattery == nil then
-            if currentModelID ~= nil then
-                for i = 1, #Batteries do
-                    if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
-                        selectedBattery = i
-                        break
-                    end
-                end
-            elseif selectedBattery == nil and #matchingBatteries > 0 then
+            if #matchingBatteries > 0 then
                 selectedBattery = matchingBatteries[1][2]
             end
         end
     end
+
+    if selectedBattery == nil then
+        selectedBattery = 1
+    end
+
+    if debug then
+        local batteryNames = {}
+        for i, battery in ipairs(matchingBatteries) do
+            table.insert(batteryNames, battery[1])
+        end
+        if batteryNames then print("Debug(build): Matching Batteries: " .. table.concat(batteryNames, ", ")) end
+        if Batteries[selectedBattery] then 
+            local batteryInfo = "Debug(build): Selected Battery: " .. Batteries[selectedBattery].name
+            if Batteries[selectedBattery].favorite then
+            batteryInfo = batteryInfo .. " (Favorite)"
+            end
+            print(batteryInfo)
+        end
+    end
+
+    -- Initialize widget based on radio type
+    if widgetInit then
+        if debug then print("Debug(build): Widget Init") end
+        -- Set form size based on radio type
+        if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
+            fieldHeight = 40
+            fieldWidth = 145
+        elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITE" or radio.board == "TWXLITES" then
+            fieldHeight = 30
+            fieldWidth = 100
+        else
+            -- Currently not tested on other radios (X10,X12,X14)
+        end
+        if debug then print("Debug(build): Creating form") end
+        form.create()
+        widgetInit = false
+    end
+    
+    if fieldHeight and fieldWidth and matchingBatteries then
+        form.clear()
+        if debug then print("Debug(build): Updating Choice Field") end
+        local pos_x = (w / 2 - fieldWidth / 2)
+        local pos_y = (h / 2 - fieldHeight / 2)
+
+        -- Create form and add choice field for selecting battery
+        local choiceField = form.addChoiceField(line, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
+            selectedBattery = value 
+        end)
+    end
 end
+
 
 local lastModelID = nil
 local rebuildMatching = true
@@ -575,37 +586,31 @@ local function wakeup(widget)
                 model.bitmap(Images[currentModelID])
                 if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
             end
-        elseif not tlmActive and currentBitmapName ~= defaultImage then
-            if defaultImage then
-                model.bitmap(defaultImage)
-                if debug then print("Debug(wakeup): Setting model image to " .. defaultImage) end
+        elseif Images.Default ~= "" then
+            print(Images.Default)
+            if currentBitmapName ~= Images.Default  then
+                model.bitmap(Images.Default)
+                if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
             end
-        end
-        
-        -- If the modelID has changed, reset the selectedBattery to nil and set rebuildMatching to true
-        if currentModelID ~= lastModelID then
-            selectedBattery = nil
-            lastModelID = currentModelID 
-            rebuildMatching = true
-            if debug then print ("Debug(wakeup): Model ID changed.  Rebuilding matchingBatteries list") end
         end
         lastTime = currentTime
     end
 
-    -- If the rebuildMatching flag is true, refresh the matchingBatteries list and rebuild the widget
-    if rebuildMatching then 
-        refreshMatchingBatteries()
-        rebuildMatching = false
+    -- Check if the modelID has changed since last wakeup, and if so, set the rebuildMatching flag to true
+    if currentModelID ~= lastModelID then
+        if debug then print("Debug(wakeup): Model ID has changed") end
+        lastModelID = currentModelID 
         rebuildWidget = true
     end
 
     if rebuildWidget then
-        refreshMatchingBatteries()
+        if debug then print ("Debug(wakeup): Rebuilding widget") end
         build(widget)
         rebuildWidget = false
     end
 
     if rebuildPrefs then
+        if debug then print ("Debug(wakeup): Rebuilding Preferences Panel") end
         prefsPanel:clear()
         fillPrefsPanel(prefsPanel, widget)
         rebuildPrefs = false
@@ -615,23 +620,27 @@ end
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 local function configure(widget)
-    if numBatts == nil then
-        numBatts = 0
-    end
+    local debug = useDebug.configure
     -- Fill Batteries panel
+    if debug then print("Debug(configure): Filling Battery Panel") end
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
     fillBatteryPanel(batteryPanel, widget)
 
     -- Fill Favorites panel
+    if debug then print("Debug(configure): Filling Favorites Panel") end
     favoritesPanel = form.addExpansionPanel("Favorites")
     favoritesPanel:open(false)
     fillFavoritesPanel(favoritesPanel, widget)
 
+    -- Fill Images panel
+    if debug then print("Debug(configure): Filling Images Panel") end
     imagePanel = form.addExpansionPanel("Images")
     imagePanel:open(false)
     fillImagePanel(imagePanel, widget)
 
+    -- Preferences Panel
+    if debug then print("Debug(configure): Filling Preferences Panel") end
     prefsPanel = form.addExpansionPanel("Preferences")
     prefsPanel:open(false)
     fillPrefsPanel(prefsPanel, widget)
@@ -724,7 +733,6 @@ local function close()
     system.exit()
     return true
 end
-
 
 local function init()
     system.registerWidget({
