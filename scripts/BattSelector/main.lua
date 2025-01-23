@@ -24,7 +24,7 @@ local useDebug = {
 }
 
 local numBatts = 0
-local useCapacity = 0
+local useCapacity
 local Batteries = {}
 local uniqueIDs = {}
 local Images = {}
@@ -240,7 +240,7 @@ local function fillPrefsPanel(prefsPanel, widget)
     if debug then print("Debug(fillPrefsPanel): Filling Preferences Panel") end
 
     local line = prefsPanel:addLine("Use Capacity")
-    local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity end, function(value) useCapacity = value end)
+    local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity or 80 end, function(value) useCapacity = value end)
     field:suffix("%")
     field:default(80)
 
@@ -587,7 +587,6 @@ local function wakeup(widget)
                 if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
             end
         elseif Images.Default ~= "" then
-            print(Images.Default)
             if currentBitmapName ~= Images.Default  then
                 model.bitmap(Images.Default)
                 if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
