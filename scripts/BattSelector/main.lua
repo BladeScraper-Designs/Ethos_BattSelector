@@ -1,11 +1,5 @@
 -- Lua Battery Selector and Alarm widget
--- BattSelect + ETHOS LUA configuration
 
--- Known Issues:
--- 1. If you change models to another model with BattSelector, the Remaining Sensor will not function.
--- 2. If you change models to another model with BattSelector, the matchingBatteries list (and therefore widget choiceField) will not update. 
-
--- Restarting the radio makes 1 and 2 work again, but I'd like to figure out *why* it happens and fix it properly at some point.
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
@@ -248,6 +242,8 @@ local function fillPrefsPanel(prefsPanel, widget)
     local line = prefsPanel:addLine("Enable Voltage Check")
     local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
     if checkBatteryVoltageOnConnect then
+        -- Set default min charged cell voltage to 4.15V
+        if minChargedCellVoltage == nil then minChargedCellVoltage = 415 end
         local line = prefsPanel:addLine("Min Charged Volt/Cell")
         local field = form.addNumberField(line, nil, 400, 430, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
         field:decimals(2)
@@ -281,7 +277,7 @@ local batteryConnectTime
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck(widget)
     local debug = useDebug.doBatteryVoltageCheck
-    if debug then print("Debug(doBatteryVoltageCheck): Running Battery Voltage Check") end
+    local minChargedCellVoltage = minChargedCellVoltage / 100 or 4.15
 
     local cellCount
     local currentVoltage
@@ -291,7 +287,7 @@ local function doBatteryVoltageCheck(widget)
         batteryConnectTime = os.clock()
     end
 
-    if batteryConnectTime and (os.clock() - batteryConnectTime) <= 30 then
+    if batteryConnectTime and (os.clock() - batteryConnectTime) <= 60 then
         -- Check if cell count sensor exists (RF 2.2? only), if not, get it
         if not cellSensor then
             cellSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Cell Count"})
@@ -314,11 +310,19 @@ local function doBatteryVoltageCheck(widget)
         end
         
         if cellSensor and voltageSensor then
+            if cellSensor:value() == nil or voltageSensor:value() == nil then
+                if debug then print("Debug(doBatteryVoltageCheck): Cell Count or Voltage sensor reading is nil.  Exiting") end
+                return
+            end
             currentVoltage = voltageSensor:value()
             cellCount = math.floor(cellSensor:value())
             isCharged = currentVoltage >= cellCount * minChargedCellVoltage 
             doneVoltageCheck = true
         elseif voltageSensor then
+            if voltageSensor:value() == nil then 
+                if debug then print("Debug(doBatteryVoltageCheck): Voltage sensor reading is nil.  Exiting") end
+                return
+            end
             currentVoltage = voltageSensor:value()
             -- Estimate cell count based on voltage
             cellCount = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
@@ -370,19 +374,30 @@ local percentSensor
 local newPercent = 100
 
 local function updateRemainingSensor(widget)
+    local debug = useDebug.updateRemainingSensor
     if percentSensor == nil then
+        if debug then print("Searching for Remaining Sensor") end
         percentSensor = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402, physId = 0x11, name = "Remaining"})
         if percentSensor == nil then
+            print("Remaining Sensor Not Found. Creating...")
             percentSensor = model.createSensor()
             percentSensor:name("Remaining")
             percentSensor:unit(UNIT_PERCENT)
             percentSensor:decimals(0)
             percentSensor:appId(0x4402)
             percentSensor:physId(0x11)
+            if debug then print(string.format("Remaining Sensor Created: 0x%04X 0x%02X", percentSensor:appId(), percentSensor:physId())) end
+        else
+            if debug then print(string.format("Remaining Sensor Found: 0x%04X 0x%02X", percentSensor:appId(), percentSensor:physId())) end
         end
-    end 
+    end
+
     if percentSensor ~= nil then
+        if debug then print("Updating Remaining Sensor: " .. newPercent .. "%") end
         percentSensor:value(newPercent)
+    else
+        if debug then print("Unable to Find/Create Remaining Sensor") end
+        return
     end
 end
 
@@ -526,8 +541,9 @@ local function wakeup(widget)
     local currentTime = os.clock()
 
     if checkBatteryVoltageOnConnect and tlmActive then
-        -- Only run the battery voltage check 3 seconds after telemetry becomes active to prevent reading voltage before Voltage telemetry is established and valid (nonzero)
-        if currentTime - lastBattCheckTime >= 3 then
+        -- Only run the battery voltage check 15 seconds after telemetry becomes active to prevent reading voltage before Voltage telemetry is established and valid (nonzero)
+        -- Initially this was 3 seconds, but some ESCs take longer to initialize and provide valid voltage telemetry (Scorpion takes over 10 seconds to start sending telemetry)
+        if currentTime - lastBattCheckTime >= 15 then
             lastBattCheckTime = currentTime
             -- If telemetry is active and voltage check is enabled, run check if it hasn't been done and dismissed yet
             if not doneVoltageCheck and not voltageDialogDismissed then
@@ -567,17 +583,13 @@ local function wakeup(widget)
         updateRemainingSensor(widget) -- Update the remaining sensor
         
         -- Check for modelID sensor presence and its value
-        if modelIDSensor == nil then 
+        if not modelIDSensor then 
             modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-            if modelIDSensor ~= nil and modelIDSensor:value() ~= nil then
-                currentModelID = math.floor(modelIDSensor:value())
-            end
-        else
-            if modelIDSensor:value() ~= nil then
-                currentModelID = math.floor(modelIDSensor:value())
-            end
         end
-            
+        if modelIDSensor:value() ~= nil then
+            currentModelID = math.floor(modelIDSensor:value())
+        end
+        
         local currentBitmapName = model.bitmap():match("([^/]+)$")
 
         -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
