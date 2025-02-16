@@ -586,7 +586,7 @@ local function wakeup(widget)
         if not modelIDSensor then 
             modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
         end
-        if modelIDSensor:value() ~= nil then
+        if modelIDSensor and modelIDSensor:value() ~= nil then
             currentModelID = math.floor(modelIDSensor:value())
         end
         
