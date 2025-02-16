@@ -18,10 +18,12 @@ local useDebug = {
 }
 
 local numBatts = 0
-local useCapacity
+local useCapacity 
 local Batteries = {}
 local uniqueIDs = {}
+local modelImageSwitching = false
 local Images = {}
+
 
 local favoritesPanel
 local imagePanel
@@ -542,7 +544,6 @@ local lastModelID = nil
 local rebuildMatching = true
 local lastTime = os.clock()
 local lastBattCheckTime = os.clock()
-local modelImageSwitching = false
 
 local function wakeup(widget)
     local debug = useDebug.wakeup
@@ -716,12 +717,13 @@ local function read(widget) -- Read configuration from storage
         doHaptic = storage.read("doHaptic") or false
         hapticPattern = storage.read("hapticPattern") or 1
     end
+    
     modelImageSwitching = storage.read("modelImageSwitching") or false
     if modelImageSwitching then
-    Images = { Default = storage.read("ImagesDefault") or "" }
+        Images = { Default = storage.read("ImagesDefault") or "" }
         for i = 1, #uniqueIDs do
             local id = uniqueIDs[i]
-            Images[id] = storage.read("Images" .. id)
+            Images[id] = storage.read("Images" .. id) or ""
         end
     end
 end
