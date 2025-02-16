@@ -29,6 +29,7 @@ local batteryPanel
 local prefsPanel
 
 local rebuildWidget = false
+local rebuildImages = false
 local rebuildPrefs = false
 
 local tlmActive = false
@@ -82,22 +83,30 @@ end
 local function fillImagePanel(imagePanel, widget)
     local debug = useDebug.fillImagePanel
 
-    local line = imagePanel:addLine("Default Image")
-    local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return Images.Default or "" end, function(newValue) Images.Default = newValue end)
+    local line = imagePanel:addLine("Enable Model Image Switching")
+    local field = form.addBooleanField(line, nil, function() return modelImageSwitching end, function(newValue) 
+        if debug then print("Model Image Switching: " .. tostring(newValue)) end
+        modelImageSwitching = newValue 
+        rebuildImages = true
+    end)
+    
+    if modelImageSwitching then
+        local line = imagePanel:addLine("Default Image")
+        local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return Images.Default or "" end, function(newValue) Images.Default = newValue end)
+        if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. Images.Default) end
 
-    if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. Images.Default) end
+        -- List out available Model IDs in the Favorites panel
+        for i, id in ipairs(uniqueIDs) do
+            local line = imagePanel:addLine("ID " .. uniqueIDs[i] .. " Image")
+            local id = uniqueIDs[i]
 
-    -- List out available Model IDs in the Favorites panel
-    for i, id in ipairs(uniqueIDs) do
-        local line = imagePanel:addLine("ID " .. uniqueIDs[i] .. " Image")
-        local id = uniqueIDs[i]
-
-        local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-            return Images[id] or ""
-        end, function(newValue)
-            Images[id] = newValue
-        end)
-        if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id]) end
+            local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
+                return Images[id] or ""
+            end, function(newValue)
+                Images[id] = newValue
+            end)
+            if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id]) end
+        end
     end
 end
 
@@ -533,6 +542,7 @@ local lastModelID = nil
 local rebuildMatching = true
 local lastTime = os.clock()
 local lastBattCheckTime = os.clock()
+local modelImageSwitching = false
 
 local function wakeup(widget)
     local debug = useDebug.wakeup
@@ -593,15 +603,17 @@ local function wakeup(widget)
         local currentBitmapName = model.bitmap():match("([^/]+)$")
 
         -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
-        if tlmActive and currentModelID and Images[currentModelID] then
-            if currentBitmapName ~= Images[currentModelID] then
-                model.bitmap(Images[currentModelID])
-                if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
-            end
-        elseif Images.Default ~= "" then
-            if currentBitmapName ~= Images.Default  then
-                model.bitmap(Images.Default)
-                if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
+        if modelImageSwitching then
+            if tlmActive and currentModelID and Images[currentModelID] then
+                if currentBitmapName ~= Images[currentModelID] then
+                    model.bitmap(Images[currentModelID])
+                    if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
+                end
+            elseif Images.Default ~= "" then
+                if currentBitmapName ~= Images.Default  then
+                    model.bitmap(Images.Default)
+                    if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
+                end
             end
         end
         lastTime = currentTime
@@ -618,6 +630,13 @@ local function wakeup(widget)
         if debug then print ("Debug(wakeup): Rebuilding widget") end
         build(widget)
         rebuildWidget = false
+    end
+
+    if rebuildImages then
+        if debug then print ("Debug(wakeup): Rebuilding Images Panel") end
+        imagePanel:clear()
+        fillImagePanel(imagePanel, widget)
+        rebuildImages = false
     end
 
     if rebuildPrefs then
@@ -697,11 +716,13 @@ local function read(widget) -- Read configuration from storage
         doHaptic = storage.read("doHaptic") or false
         hapticPattern = storage.read("hapticPattern") or 1
     end
-    
+    modelImageSwitching = storage.read("modelImageSwitching") or false
+    if modelImageSwitching then
     Images = { Default = storage.read("ImagesDefault") or "" }
-    for i = 1, #uniqueIDs do
-        local id = uniqueIDs[i]
-        Images[id] = storage.read("Images" .. id)
+        for i = 1, #uniqueIDs do
+            local id = uniqueIDs[i]
+            Images[id] = storage.read("Images" .. id)
+        end
     end
 end
 
@@ -723,12 +744,15 @@ local function write(widget) -- Write configuration to storage
         storage.write("doHaptic", doHaptic)
         if doHaptic then storage.write("hapticPattern", hapticPattern) end
     end
-    
-    storage.write("ImagesDefault", Images.Default)
-    for id, image in pairs(Images) do
-        if id ~= "Default" then
-            storage.write("Images" .. id, image)
-        end
+
+    if modelImageSwitching then
+        storage.write("modelImageSwitching", modelImageSwitching)
+        storage.write("ImagesDefault", Images.Default)
+        for id, image in pairs(Images) do
+            if id ~= "Default" then
+                storage.write("Images" .. id, image)
+            end
+        end 
     end
 end
 
