@@ -1,5 +1,7 @@
 -- Lua Battery Selector and Alarm widget
 
+-- Include json library for read/write of config and battery data
+local json = require("lib.dkjson")
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
@@ -12,6 +14,8 @@ local useDebug = {
     getmAh = false,
     create = false,
     build = false,
+    read = true,
+    write = true,
     paint = false,
     wakeup = false,
     configure = false
@@ -23,7 +27,6 @@ local Batteries = {}
 local uniqueIDs = {}
 local modelImageSwitching = false
 local Images = {}
-
 
 local favoritesPanel
 local imagePanel
@@ -683,81 +686,171 @@ local function configure(widget)
     -- fillAlertsPanel(alertsPanel, widget)
 end
 
-local function read(widget) -- Read configuration from storage
-    numBatts = storage.read("numBatts") or 0
-    useCapacity = storage.read("useCapacity") or 80
-    Batteries = {}
-    if numBatts > 0 then
-        for i = 1, numBatts do
-            local name = storage.read("Battery" .. i .. "_name") or "Battery " .. i
-            local capacity = storage.read("Battery" .. i .. "_capacity") or 0
-            local modelID = storage.read("Battery" .. i .. "_modelID") or 0
-            local favorite = storage.read("Battery" .. i .. "_favorite") or false
-            Batteries[i] = {
-                name = name,
-                capacity = capacity,
-                modelID = modelID,
-                favorite = favorite
-            }
-        end
+-- Helper function to read a file line by line
+local function readFileContent(filename)
+    local file = io.open(filename, "r")
+    if not file then
+        return nil
     end
-    local uniqueIDs = {}
-    local seen = {}
-    for i = 1, numBatts do
-        local id = Batteries[i].modelID
-        if not seen[id] then
-            seen[id] = true
-            table.insert(uniqueIDs, id)
-        end
+    local content = ""
+    while true do
+        local line = file:read("*l")
+        if not line then break end
+        content = content .. line .. "\n"
     end
-
-    checkBatteryVoltageOnConnect = storage.read("checkBatteryVoltageOnConnect") or false
-    if checkBatteryVoltageOnConnect then
-        minChargedCellVoltage = storage.read("minChargedCellVoltage") or 415
-        doHaptic = storage.read("doHaptic") or false
-        hapticPattern = storage.read("hapticPattern") or 1
-    end
-    
-    modelImageSwitching = storage.read("modelImageSwitching") or false
-    if modelImageSwitching then
-        Images = { Default = storage.read("ImagesDefault") or "" }
-        for i = 1, #uniqueIDs do
-            local id = uniqueIDs[i]
-            Images[id] = storage.read("Images" .. id) or ""
-        end
-    end
+    file:close()
+    return content
 end
 
+-- Helper function to read a file line by line
+local function readFileContent(filename)
+    local file = io.open(filename, "r")
+    if not file then
+        return nil
+    end
+    local content = ""
+    while true do
+        local line = file:read("*l")
+        if not line then break end
+        content = content .. line .. "\n"
+    end
+    file:close()
+    return content
+end
 
-local function write(widget) -- Write configuration to storage
-    storage.write("numBatts", numBatts)
-    storage.write("useCapacity", useCapacity)
-    if numBatts > 0 then
-        for i = 1, numBatts do
-            storage.write("Battery" .. i .. "_name", Batteries[i].name)
-            storage.write("Battery" .. i .. "_capacity", Batteries[i].capacity)
-            storage.write("Battery" .. i .. "_modelID", Batteries[i].modelID)
-            storage.write("Battery" .. i .. "_favorite", Batteries[i].favorite)
+local function read() 
+    local debug = useDebug.read  -- Toggle debug prints for read
+    local configFileName = "config.json"
+    local batteriesFileName = "batteries.json"
+
+    if debug then print("DEBUG: Starting read()") end
+    if debug then print("DEBUG: Config file: " .. configFileName) end
+    if debug then print("DEBUG: Batteries file: " .. batteriesFileName) end
+
+    -- Read the configuration data
+    local configData = {}
+    if debug then print("DEBUG: Attempting to open config file...") end
+    local content = readFileContent(configFileName)
+    if content then
+        if debug then
+            print("DEBUG: Raw config file content:")
+            print(content)
         end
-    end
-    storage.write("checkBatteryVoltageOnConnect", checkBatteryVoltageOnConnect)
-    if checkBatteryVoltageOnConnect then
-        storage.write("minChargedCellVoltage", minChargedCellVoltage)
-        storage.write("doHaptic", doHaptic)
-        if doHaptic then storage.write("hapticPattern", hapticPattern) end
-    end
-
-    if modelImageSwitching then
-        storage.write("modelImageSwitching", modelImageSwitching)
-        storage.write("ImagesDefault", Images.Default)
-        for id, image in pairs(Images) do
-            if id ~= "Default" then
-                storage.write("Images" .. id, image)
+        if content ~= "" then
+            configData = json.decode(content)
+            if configData then
+                if debug then print("DEBUG: Successfully decoded config data.") end
+            else
+                if debug then print("DEBUG: Error decoding config data!") end
             end
-        end 
+        else
+            if debug then print("DEBUG: Config file is empty!") end
+        end
+    else
+        if debug then print("DEBUG: Config file not found!") end
+    end
+
+    -- Set config variables with defaults if needed
+    numBatts = configData.numBatts or 0
+    useCapacity = configData.useCapacity or 80
+    checkBatteryVoltageOnConnect = configData.checkBatteryVoltageOnConnect or false
+    minChargedCellVoltage = configData.minChargedCellVoltage or 415
+    doHaptic = configData.doHaptic or false
+    hapticPattern = configData.hapticPattern or 1
+    modelImageSwitching = configData.modelImageSwitching or false
+    Images = configData.Images or {}  -- May be empty if not stored
+
+    if debug then
+        print("DEBUG: Config variables set:")
+        print("  numBatts = " .. tostring(numBatts))
+        print("  useCapacity = " .. tostring(useCapacity))
+        print("  checkBatteryVoltageOnConnect = " .. tostring(checkBatteryVoltageOnConnect))
+        print("  minChargedCellVoltage = " .. tostring(minChargedCellVoltage))
+        print("  doHaptic = " .. tostring(doHaptic))
+        print("  hapticPattern = " .. tostring(hapticPattern))
+        print("  modelImageSwitching = " .. tostring(modelImageSwitching))
+        print("  Images = " .. json.encode(Images, { indent = "  " }))
+    end
+
+    -- Read the batteries data
+    if debug then print("DEBUG: Attempting to open batteries file...") end
+    local content2 = readFileContent(batteriesFileName)
+    if content2 then
+        if debug then
+            print("DEBUG: Raw batteries file content:")
+            print(content2)
+        end
+        if content2 ~= "" then
+            Batteries = json.decode(content2)
+            if Batteries then
+                if debug then print("DEBUG: Successfully decoded batteries data.") end
+            else
+                if debug then print("DEBUG: Error decoding batteries data!") end
+                Batteries = {}
+            end
+        else
+            if debug then print("DEBUG: Batteries file is empty!") end
+            Batteries = {}  -- Default to an empty table
+        end
+    else
+        if debug then print("DEBUG: Batteries file not found!") end
+        Batteries = {}  -- File not found; initialize empty table
+    end
+
+    -- Update numBatts based on the Batteries table length
+    numBatts = #Batteries
+    if debug then print("DEBUG: Final numBatts = " .. tostring(numBatts)) end
+    
+    -- Optionally print the loaded data for debugging:
+    if debug then
+        local prettyConfig = json.encode(configData, { indent = "  " })
+        print("Loaded config data:\n" .. prettyConfig)
+        local prettyBatteries = json.encode(Batteries, { indent = "  " })
+        print("Loaded batteries data:\n" .. prettyBatteries)
     end
 end
 
+local function write()
+    local debug = useDebug.write  -- Toggle debug prints for write
+    local configFileName = "config.json"
+    local batteriesFileName = "batteries.json"
+
+    -- Gather configuration data into a table (excluding battery details)
+    local configData = {
+        numBatts = numBatts,
+        useCapacity = useCapacity,
+        checkBatteryVoltageOnConnect = checkBatteryVoltageOnConnect,
+        minChargedCellVoltage = minChargedCellVoltage,
+        doHaptic = doHaptic,
+        hapticPattern = hapticPattern,
+        modelImageSwitching = modelImageSwitching,
+        Images = Images
+    }
+
+    -- Serialize tables with pretty printing (for human readability)
+    local jsonConfig = json.encode(configData, { indent = "  " })
+    local jsonBatteries = json.encode(Batteries, { indent = "  " })
+
+    -- Write config data to file
+    local file = io.open(configFileName, "w")
+    if file then
+        file:write(jsonConfig)
+        file:close()
+        if debug then print("Config data written to " .. configFileName) end
+    else
+        if debug then print("Error: Unable to open " .. configFileName .. " for writing.") end
+    end
+
+    -- Write batteries data to file
+    local file2 = io.open(batteriesFileName, "w")
+    if file2 then
+        file2:write(jsonBatteries)
+        file2:close()
+        if debug then print("Batteries data written to " .. batteriesFileName) end
+    else
+        if debug then print("Error: Unable to open " .. batteriesFileName .. " for writing.") end
+    end
+end
 
 local function paint(widget) end
 
