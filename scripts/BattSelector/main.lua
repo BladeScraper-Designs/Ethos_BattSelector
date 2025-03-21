@@ -556,9 +556,7 @@ local function build(widget)
     end
 end
 
-
 local lastModelID = nil
-local rebuildMatching = true
 local lastTime = os.clock()
 local lastBattCheckTime = os.clock()
 
@@ -637,7 +635,7 @@ local function wakeup(widget)
         lastTime = currentTime
     end
 
-    -- Check if the modelID has changed since last wakeup, and if so, set the rebuildMatching flag to true
+    -- Check if the modelID has changed since last wakeup, and if so, set the rebuildWidgetflag to true
     if currentModelID ~= lastModelID then
         if debug then print("Debug(wakeup): Model ID has changed") end
         lastModelID = currentModelID 
