@@ -723,31 +723,31 @@ local function read()
     local configFileName = "config.json"
     local batteriesFileName = "batteries.json"
 
-    if debug then print("DEBUG: Starting read()") end
-    if debug then print("DEBUG: Config file: " .. configFileName) end
-    if debug then print("DEBUG: Batteries file: " .. batteriesFileName) end
+    if debug then print("Debug(read): Starting read()") end
+    if debug then print("Debug(read): Config file: " .. configFileName) end
+    if debug then print("Debug(read): Batteries file: " .. batteriesFileName) end
 
     -- Read the configuration data
     local configData = {}
-    if debug then print("DEBUG: Attempting to open config file...") end
+    if debug then print("Debug(read): Attempting to open config file...") end
     local content = readFileContent(configFileName)
     if content then
         if debug then
-            print("DEBUG: Raw config file content:")
+            print("Debug(read): Raw config file content:")
             print(content)
         end
         if content ~= "" then
             configData = json.decode(content)
             if configData then
-                if debug then print("DEBUG: Successfully decoded config data.") end
+                if debug then print("Debug(read): Successfully decoded config data.") end
             else
-                if debug then print("DEBUG: Error decoding config data!") end
+                if debug then print("Debug(read): Error decoding config data!") end
             end
         else
-            if debug then print("DEBUG: Config file is empty!") end
+            if debug then print("Debug(read): Config file is empty!") end
         end
     else
-        if debug then print("DEBUG: Config file not found!") end
+        if debug then print("Debug(read): Config file not found!") end
     end
 
     -- Set config variables with defaults if needed
@@ -761,7 +761,7 @@ local function read()
     Images = configData.Images or {}  -- May be empty if not stored
 
     if debug then
-        print("DEBUG: Config variables set:")
+        print("Debug(read): Config variables set:")
         print("  numBatts = " .. tostring(numBatts))
         print("  useCapacity = " .. tostring(useCapacity))
         print("  checkBatteryVoltageOnConnect = " .. tostring(checkBatteryVoltageOnConnect))
@@ -773,33 +773,33 @@ local function read()
     end
 
     -- Read the batteries data
-    if debug then print("DEBUG: Attempting to open batteries file...") end
+    if debug then print("Debug(read): Attempting to open batteries file...") end
     local content2 = readFileContent(batteriesFileName)
     if content2 then
         if debug then
-            print("DEBUG: Raw batteries file content:")
+            print("Debug(read): Raw batteries file content:")
             print(content2)
         end
         if content2 ~= "" then
             Batteries = json.decode(content2)
             if Batteries then
-                if debug then print("DEBUG: Successfully decoded batteries data.") end
+                if debug then print("Debug(read): Successfully decoded batteries data.") end
             else
-                if debug then print("DEBUG: Error decoding batteries data!") end
+                if debug then print("Debug(read): Error decoding batteries data!") end
                 Batteries = {}
             end
         else
-            if debug then print("DEBUG: Batteries file is empty!") end
+            if debug then print("Debug(read): Batteries file is empty!") end
             Batteries = {}  -- Default to an empty table
         end
     else
-        if debug then print("DEBUG: Batteries file not found!") end
+        if debug then print("Debug(read): Batteries file not found!") end
         Batteries = {}  -- File not found; initialize empty table
     end
 
     -- Update numBatts based on the Batteries table length
     numBatts = #Batteries
-    if debug then print("DEBUG: Final numBatts = " .. tostring(numBatts)) end
+    if debug then print("Debug(read): Final numBatts = " .. tostring(numBatts)) end
     
     -- Optionally print the loaded data for debugging:
     if debug then
@@ -836,9 +836,9 @@ local function write()
     if file then
         file:write(jsonConfig)
         file:close()
-        if debug then print("Config data written to " .. configFileName) end
+        if debug then print("Debug(write): Config data written to " .. configFileName) end
     else
-        if debug then print("Error: Unable to open " .. configFileName .. " for writing.") end
+        if debug then print("Debug(write): Error: Unable to open " .. configFileName .. " for writing.") end
     end
 
     -- Write batteries data to file
@@ -846,9 +846,9 @@ local function write()
     if file2 then
         file2:write(jsonBatteries)
         file2:close()
-        if debug then print("Batteries data written to " .. batteriesFileName) end
+        if debug then print("Debug(write): Batteries data written to " .. batteriesFileName) end
     else
-        if debug then print("Error: Unable to open " .. batteriesFileName .. " for writing.") end
+        if debug then print("Debug(write): Error: Unable to open " .. batteriesFileName .. " for writing.") end
     end
 end
 
