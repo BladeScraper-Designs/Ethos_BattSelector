@@ -6,6 +6,7 @@ local json = require("lib.dkjson")
 -- Predeclare read and write functions to allow calling them before definition
 local read  -- Function to load configuration and battery data from JSON
 local write -- Function to save configuration and battery data to JSON
+local configLoaded = false  -- Flag to indicate if the configuration has been loaded yet
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
@@ -274,10 +275,6 @@ local function fillPrefsPanel(prefsPanel, widget)
             local line = prefsPanel:addLine("Haptic Pattern")
             local field = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern end, function(newValue) hapticPattern = newValue end)
         end
-    end
-
-    if useDebug.fillPrefsPanel then
-        print("fillingPrefsPanel")
     end
 end
 
@@ -718,38 +715,32 @@ local function readFileContent(filename)
     file:close()
     return content
 end
-
 read = function ()
     configLoaded = false  -- Reset the configLoaded flag to false before reading
-    local debug = useDebug.read  -- Toggle debug prints for read
+    local debug = useDebug.read  
 
     local configFileName = "config.json"
     local batteriesFileName = "batteries.json"
 
     if debug then print("Debug(read): Starting read()") end
-    if debug then print("Debug(read): Config file: " .. configFileName) end
-    if debug then print("Debug(read): Batteries file: " .. batteriesFileName) end
 
-    -- Read the configuration data
+    -- Read config.json
     local configData = {}
-    if debug then print("Debug(read): Attempting to open config file...") end
     local content = readFileContent(configFileName)
-    if content then
-        if content ~= "" then
-            configData = json.decode(content)
-            if configData then
-                if debug then print("Debug(read): Successfully decoded config data.") end
-            else
-                if debug then print("Debug(read): Error decoding config data!") end
-            end
-        else
-            if debug then print("Debug(read): Config file is empty!") end
-        end
+    if content and content ~= "" then
+        configData = json.decode(content) or {}
+        if debug then print("Debug(read): Successfully decoded config data.") end
     else
-        if debug then print("Debug(read): Config file not found!") end
+        if debug then print("Debug(read): Config file not found or empty, using defaults.") end
     end
 
-    -- Set config variables with defaults if not found in the config file
+    -- Check versioning for config
+    if not configData.version then
+        if debug then print("Debug(read): No version detected in config.json, assuming version 1.") end
+        configData.version = 1  -- Assume version 1 for old formats
+    end
+
+    -- Set config variables with defaults
     numBatts = configData.numBatts or 0
     useCapacity = configData.useCapacity or 80
     checkBatteryVoltageOnConnect = configData.checkBatteryVoltageOnConnect or false
@@ -771,27 +762,33 @@ read = function ()
         print("  Images = " .. json.encode(Images, { indent = "  " }))
     end
 
-    -- Read the batteries data
-    if debug then print("Debug(read): Attempting to open batteries file...") end
+    -- Read batteries.json
     local content2 = readFileContent(batteriesFileName)
-    if content2 then
-        if content2 ~= "" then
-            Batteries = json.decode(content2)
-            if Batteries then
-                if debug then print("Debug(read): Successfully decoded batteries data.") end
+    if content2 and content2 ~= "" then
+        local decoded = json.decode(content2)
+        if decoded then
+            if decoded.version and decoded.batteries then
+                -- New format
+                Batteries = decoded.batteries
+                if debug then print("Debug(read): Versioned battery format detected (v" .. decoded.version .. ")") end
+            elseif type(decoded) == "table" and #decoded > 0 and decoded[1].name then
+                -- Old format (plain array)
+                Batteries = decoded
+                if debug then print("Debug(read): Legacy battery format detected, assuming version 1.") end
             else
-                if debug then print("Debug(read): Error decoding batteries data!") end
+                if debug then print("Debug(read): Unknown structure in batteries.json, using empty.") end
                 Batteries = {}
             end
         else
-            if debug then print("Debug(read): Batteries file is empty!") end
-            Batteries = {}  -- Default to an empty table
+            if debug then print("Debug(read): Failed to decode batteries.json!") end
+            Batteries = {}
         end
     else
-        if debug then print("Debug(read): Batteries file not found!") end
-        Batteries = {}  -- File not found; initialize empty table
+        Batteries = {}  -- File not found or empty
+        if debug then print("Debug(read): batteries.json not found or empty.") end
     end
 
+    -- Debug battery output
     if debug then
         print("Debug(read): Batteries list:")
         for i, battery in ipairs(Batteries) do
@@ -801,18 +798,19 @@ read = function ()
             print(string.format("    Model ID: %s", tostring(battery.modelID or "N/A")))
             print(string.format("    Favorite: %s", battery.favorite and "Yes" or "No"))
         end
-    end    
+    end
+
     if debug then print("Debug(read): Finished read()") end
 end
 
 write = function ()
-    local debug = useDebug.write  -- Toggle debug prints for write
-
+    local debug = useDebug.write  
     local configFileName = "config.json"
     local batteriesFileName = "batteries.json"
 
-    -- Gather configuration data into a table
+    -- Gather config data
     local configData = {
+        version = 1,  -- Ensure future compatibility
         numBatts = numBatts,
         useCapacity = useCapacity,
         checkBatteryVoltageOnConnect = checkBatteryVoltageOnConnect,
@@ -823,11 +821,17 @@ write = function ()
         Images = Images
     }
 
-    -- Serialize tables with pretty printing
-    local jsonConfig = json.encode(configData, { indent = "  " })
-    local jsonBatteries = json.encode(Batteries, { indent = "  " })
+    -- Gather battery data in a versioned structure
+    local batteryData = {
+        version = 1,  -- Ensure future compatibility
+        batteries = Batteries
+    }
 
-    -- Write config data to file
+    -- Serialize tables
+    local jsonConfig = json.encode(configData, { indent = "  " })
+    local jsonBatteries = json.encode(batteryData, { indent = "  " })
+
+    -- Write config.json
     local file = io.open(configFileName, "w")
     if file then
         file:write(jsonConfig)
@@ -837,7 +841,7 @@ write = function ()
         if debug then print("Debug(write): Error: Unable to open " .. configFileName .. " for writing.") end
     end
 
-    -- Write batteries data to file
+    -- Write batteries.json
     local file2 = io.open(batteriesFileName, "w")
     if file2 then
         file2:write(jsonBatteries)
