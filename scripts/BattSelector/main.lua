@@ -14,8 +14,8 @@ local useDebug = {
     getmAh = false,
     create = false,
     build = false,
-    read = true,
-    write = true,
+    read = false,
+    write = false,
     paint = false,
     wakeup = false,
     configure = false
@@ -470,12 +470,22 @@ local function build(widget)
     matchingBatteries = {}
     if #Batteries > 0 then
         if currentModelID then
-            if debug then print ("Debug(build): Current Model ID: " .. currentModelID) end
+            if debug then print("Debug(build): Current Model ID: " .. currentModelID) end
+            -- First, try to add batteries matching currentModelID.
             for i = 1, #Batteries do
                 if Batteries[i].modelID == currentModelID then
                     matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
                 end
             end
+            -- If no batteries matched, fall back to adding all batteries.
+            if #matchingBatteries == 0 then
+                if debug then print("Debug(build): No batteries match currentModelID, falling back to all batteries.") end
+                for i = 1, #Batteries do
+                    matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
+                end
+            end
+    
+            -- Select a battery if a favorite is marked for the currentModelID.
             for i = 1, #Batteries do
                 if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
                     selectedBattery = i
@@ -483,6 +493,7 @@ local function build(widget)
                 end
             end
         else
+            -- No currentModelID provided; simply add all batteries.
             for i = 1, #Batteries do
                 matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
             end
@@ -801,7 +812,6 @@ local function read()
     numBatts = #Batteries
     if debug then print("Debug(read): Final numBatts = " .. tostring(numBatts)) end
     
-    -- Optionally print the loaded data for debugging:
     if debug then
         local prettyConfig = json.encode(configData, { indent = "  " })
         print("Loaded config data:\n" .. prettyConfig)
