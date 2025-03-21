@@ -102,15 +102,15 @@ local function fillImagePanel(imagePanel, widget)
 
         -- List out available Model IDs in the Favorites panel
         for i, id in ipairs(uniqueIDs) do
-            local line = imagePanel:addLine("ID " .. uniqueIDs[i] .. " Image")
-            local id = uniqueIDs[i]
-
+            local line = imagePanel:addLine("ID " .. id .. " Image")
+            local key = tostring(id)  -- Convert to string
+        
             local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-                return Images[id] or ""
+                return Images[key] or ""
             end, function(newValue)
-                Images[id] = newValue
+                Images[key] = newValue
             end)
-            if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. Images[id]) end
+            if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. (Images[key] or "")) end
         end
     end
 end
@@ -619,13 +619,13 @@ local function wakeup(widget)
 
         -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
         if modelImageSwitching then
-            if tlmActive and currentModelID and Images[currentModelID] then
-                if currentBitmapName ~= Images[currentModelID] then
-                    model.bitmap(Images[currentModelID])
-                    if debug then print("Debug(wakeup: Setting model image to " .. (Images[currentModelID])) end
+            if tlmActive and currentModelID and Images[tostring(currentModelID)] then
+                if currentBitmapName ~= Images[tostring(currentModelID)] then
+                    model.bitmap(Images[tostring(currentModelID)])
+                    if debug then print("Debug(wakeup): Setting model image to " .. Images[tostring(currentModelID)]) end
                 end
-            elseif Images.Default ~= "" then
-                if currentBitmapName ~= Images.Default  then
+            elseif Images and Images.Default and Images.Default ~= "" then
+                if currentBitmapName ~= Images.Default then
                     model.bitmap(Images.Default)
                     if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
                 end
