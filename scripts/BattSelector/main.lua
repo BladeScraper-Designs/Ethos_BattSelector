@@ -10,7 +10,7 @@ local configLoaded = false  -- Flag to indicate if the configuration has been lo
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
-    getFieldLayout = true,
+    getLayout = true,
     fillFavoritesPanel = false,
     fillImagePanel = false,
     fillBatteryPanel = true,
@@ -136,13 +136,18 @@ local function fillImagePanel(imagePanel, widget)
     end
 end
 
+local lineW, lineH
 
-local function getLayout()
-    local debug = useDebug.getFieldLayout
-    local lineW, lineH = lcd.getWindowSize()
+local function getLayout(reorderMode)
+    local debug = useDebug.getLayout
+    if not lineW or not lineH then
+        lineW, lineH = lcd.getWindowSize()
+    end
     local board = system.getVersion().board
 
-    -- Margin & offset based on board
+    --------------------------------------------------
+    -- 1) margin & offset per board
+    --------------------------------------------------
     local margin, expansionPanelRightOffset
     if board == "X20" or board == "X20S" or board == "X20PRO" or board == "X20PROAW"
        or board == "X20R" or board == "X20RS" then
@@ -153,11 +158,11 @@ local function getLayout()
         expansionPanelRightOffset = 32
     elseif board == "X18" or board == "X18S"
        or board == "TWXLITE" or board == "TWXLITES" then
-        margin = 6
-        expansionPanelRightOffset = 16
+        margin = 4
+        expansionPanelRightOffset = 18
     elseif board == "X14" or board == "X14S" then
         margin = 4
-        expansionPanelRightOffset = 24
+        expansionPanelRightOffset = 22
     else
         margin = 6
         expansionPanelRightOffset = 0
@@ -170,26 +175,41 @@ local function getLayout()
     local fieldH = lineH - (2 * margin) - 2
     local fieldY = margin
 
-    -- Column definitions & relative size 
-    local columns = {
-        { name = "batName", ratio = 0.47 },  -- Will flex for leftover
-        { name = "batType", ratio = 0.14 },
-        { name = "batCels", ratio = 0.05 },
-        { name = "batCap",  ratio = 0.20 },
-        { name = "batId",   ratio = 0.05 },
-    }
+    --------------------------------------------------
+    -- 2) Define columns based on reorderMode
+    --------------------------------------------------
+    local columns
+    if reorderMode then
+        -- REORDER columns
+        columns = {
+            { name="batName",   ratio=0.47 }, -- Name field
+            { name="batDelete", ratio=0.15 }, -- "Delete" button
+            { name="batClone",  ratio=0.15 }, -- "Clone" button
+            { name="batUp",     ratio=0.08 }, -- "Up" button
+            { name="batDown",   ratio=0.08 }, -- "Down" button
+        }
+    else
+        -- NORMAL columns
+        columns = {
+            { name="batName", ratio=0.47 },  -- Name
+            { name="batType", ratio=0.13 },  -- Type
+            { name="batCels", ratio=0.07 },  -- Cells
+            { name="batCap",  ratio=0.16 },  -- Capacity
+            { name="batId",   ratio=0.05 },  -- ID
+        }
+    end
 
     local ratioSum = 0
     for _, col in ipairs(columns) do
         ratioSum = ratioSum + col.ratio
     end
-
-    -- Figure out how many gaps there are between all columns and figure out how much space that takes from available width
     local nCols = #columns
     local totalColSpacing = (nCols - 1) * margin
     local availableForCols = usableWidth - totalColSpacing
 
-    -- Compute each column width based on previously calculated available width and calculate total used width
+    --------------------------------------------------
+    -- 3) Compute each column’s width
+    --------------------------------------------------
     local colWidth = {}
     local totalW = 0
     for _, col in ipairs(columns) do
@@ -198,16 +218,18 @@ local function getLayout()
         totalW = totalW + w
     end
 
-    -- Adjust batname width to absorb any overflow/underflow
+    -- leftover => adjust the first column (batName)
     local leftover = availableForCols - totalW
-    if leftover ~= 0 then
+    if leftover ~= 0 and colWidth["batName"] then
         colWidth["batName"] = colWidth["batName"] + leftover
         if colWidth["batName"] < 1 then
             colWidth["batName"] = 1
         end
     end
 
-    -- Layout table
+    --------------------------------------------------
+    -- 4) Assign x positions in one pass
+    --------------------------------------------------
     local layout = {
         margin = margin,
         fieldH = fieldH,
@@ -217,7 +239,6 @@ local function getLayout()
         button = {},
     }
 
-    -- Assign x positions
     local x = margin
     for i, col in ipairs(columns) do
         layout.field[col.name] = {
@@ -232,49 +253,65 @@ local function getLayout()
         end
     end
 
-    -- Helper function to align fields 
-    local function alignField(label, alignment, anchorRect)
+    -- Helper function to align header text to an anchor rect (usually an existing field)
+    local function alignField(label, alignment, anchorRect, padding, offset)
+        padding = padding or 0
         local textW = lcd.getTextSize(label)
-        local sidePadding = 10   -- internal horizontal padding
+        local totalW = textW + 2 * padding
+        local rect = {}
+        
+        if anchorRect then
+          if alignment == "center" then
+            rect.x = anchorRect.x + math.floor((anchorRect.w - totalW) / 2)
+          elseif alignment == "right" then
+            rect.x = anchorRect.x + anchorRect.w - totalW
+          else  -- left alignment
+            rect.x = anchorRect.x
+          end
+          rect.y = anchorRect.y
+        else
+          if alignment == "right" then
+            offset = offset or (margin * 4)
+            rect.x = lineW - totalW - offset
+          elseif alignment == "center" then
+            rect.x = margin + math.floor((lineW - 2 * margin - totalW) / 2)
+          else
+            rect.x = margin
+          end
+          rect.y = fieldY
+        end
+        
+        rect.w = totalW
+        rect.h = fieldH
+        return rect
+      end      
+
+    -- 
+    layout.header.batName = alignField("Name", "left",   layout.field.batName, 2)
+    layout.header.batType = alignField("Type", "left", layout.field.batType, 2)
+    layout.header.batCels = alignField("Cells", "center", layout.field.batCels, 2)
+    layout.header.batCap  = alignField("Capacity", "center", layout.field.batCap, 2)
+    layout.header.batId   = alignField("ID", "center",   layout.field.batId, 2)
+
+    --------------------------------------------------
+    -- 6) Buttons alignment stays the same
+    --------------------------------------------------
+    local function alignForButton(label, alignment)
+        local textW = lcd.getTextSize(label)
+        local sidePadding = 10
         local rectW = textW + (2 * sidePadding)
         local rect = { y = fieldY, w = rectW, h = fieldH }
 
-        if anchorRect then
-            -- Align inside the anchorRect
-            if alignment == "center" then
-                rect.x = anchorRect.x + (anchorRect.w - rectW)/2
-            elseif alignment == "right" then
-                rect.x = anchorRect.x + anchorRect.w - rectW
-            else
-                rect.x = anchorRect.x
-            end
-            rect.y = anchorRect.y
+        if alignment == "right" then
+            rect.x = maxRight - rectW
         else
-            -- Align relative to the entire width
-            if alignment == "right" then
-                -- Flush with the columns' far right
-                rect.x = maxRight - rectW
-            elseif alignment == "center" then
-                rect.x = (lineW - rectW)/2
-            else
-                -- Flush with the same left margin as columns
-                rect.x = margin
-            end
+            rect.x = margin
         end
-
         return rect
     end
 
-    -- Headers
-    layout.header.batName = alignField("Name",   "left",   layout.field.batName)
-    layout.header.batType = alignField("Type",   "left",   layout.field.batType)
-    layout.header.batCels = alignField("Cells",  "center", layout.field.batCels)
-    layout.header.batCap  = alignField("Capacity","center", layout.field.batCap)
-    layout.header.batId   = alignField("ID",     "center", layout.field.batId)
-
-    -- Buttons
-    layout.button.batReorder = alignField("Reorder/Edit", "left")
-    layout.button.batAdd     = alignField("Add New",      "right")
+    layout.button.batReorder = alignForButton("Reorder/Edit", "left")
+    layout.button.batAdd     = alignForButton("Add New",      "right")
 
     return layout
 end
@@ -287,17 +324,13 @@ local function fillBatteryPanel(batteryPanel, widget)
     if debug then print("Debug(fillBatteryPanel): Filling Battery Panel") end
 
     -- Get the layout
-    local layout = getLayout()
+    local layout = getLayout(reorderMode)
+    print("Layout:")
+    printTable(layout.field)
     -- if debug then printTable(layout) end
 
     -- Header text positions for reorder mode
     local pos_header_move = {x = 665, y = layout.margin, w = 100, h = layout.fieldH}
-
-    -- Reorder button position
-    local pos_delete_button = {x = 416, y = layout.margin, w = 109, h = layout.fieldH}
-    local pos_clone_button = {x = 533, y = layout.margin, w = 101, h = layout.fieldH}
-    local pos_up_button = {x = 642, y = layout.margin, w = 50, h = layout.fieldH}
-    local pos_down_button = {x = 700, y = layout.margin, w = 50, h = layout.fieldH}
 
     -- Create header for the battery panel
     local line = batteryPanel:addLine("")
@@ -348,14 +381,14 @@ local function fillBatteryPanel(batteryPanel, widget)
             field:enableInstantChange(false)
 
         else
-            local deleteButton = form.addTextButton(line, pos_delete_button, "Delete", function()
+            local deleteButton = form.addTextButton(line, layout.field.batDelete, "Delete", function()
                 table.remove(Batteries, i)
                 numBatts = numBatts - 1
                 batteryPanel:clear()
                 fillBatteryPanel(batteryPanel, widget)
                 return true
             end)
-            local cloneButton = form.addTextButton(line, pos_clone_button, "Clone", function()
+            local cloneButton = form.addTextButton(line, layout.field.batClone, "Clone", function()
                 numBatts = numBatts + 1
                 Batteries[numBatts] = {name = Batteries[i].name .. " (Copy)", capacity = Batteries[i].capacity, modelID = Batteries[i].modelID}
                 batteryPanel:clear()
@@ -364,7 +397,7 @@ local function fillBatteryPanel(batteryPanel, widget)
             end)
             -- Add Up/Down buttons in reorder mode
             if i > 1 then
-                local upButton = form.addTextButton(line, pos_up_button, "↑", function()
+                local upButton = form.addTextButton(line, layout.field.batUp, "↑", function()
                     Batteries[i], Batteries[i-1] = Batteries[i-1], Batteries[i]
                     batteryPanel:clear()
                     fillBatteryPanel(batteryPanel, widget)
@@ -372,7 +405,7 @@ local function fillBatteryPanel(batteryPanel, widget)
                 end)
             end
             if i < numBatts then
-                local downButton = form.addTextButton(line, pos_down_button, "↓", function()
+                local downButton = form.addTextButton(line, layout.field.batDown, "↓", function()
                     Batteries[i], Batteries[i+1] = Batteries[i+1], Batteries[i]
                     batteryPanel:clear()
                     fillBatteryPanel(batteryPanel, widget)
@@ -684,16 +717,17 @@ local function build(widget)
     -- Initialize widget based on radio type
     if widgetInit then
         if debug then print("Debug(build): Widget Init") end
-        -- Set form size based on radio type
-        if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
+        
+        if radio.board:match("^X20") or radio.board == "X18R" or radio.board == "X18RS" or radio.board == "X14" or radio.board == "X14S" then
             fieldHeight = 40
-            fieldWidth = 145
-        elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITE" or radio.board == "TWXLITES" then
-            fieldHeight = 30
-            fieldWidth = 100
         else
-            -- Currently not tested on other radios (X10,X12,X14)
+            fieldHeight = 30
         end
+
+        local padding = 10
+        fieldWidth, _ = lcd.getWindowSize()
+        fieldWidth = fieldWidth - padding * 2
+
         if debug then print("Debug(build): Creating form") end
         form.create()
         widgetInit = false
