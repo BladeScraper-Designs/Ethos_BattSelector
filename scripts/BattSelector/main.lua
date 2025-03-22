@@ -10,21 +10,37 @@ local configLoaded = false  -- Flag to indicate if the configuration has been lo
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
+    getFieldLayout = true,
     fillFavoritesPanel = false,
     fillImagePanel = false,
-    fillBatteryPanel = false,
+    fillBatteryPanel = true,
     fillPrefsPanel = false,
     doBatteryVoltageCheck = false,
     updateRemainingSensor = false,
     getmAh = false,
     create = true,
     build = false,
-    read = true,
+    read = false,
     write = false,
     paint = false,
     wakeup = false,
     configure = false
 }
+
+-- Print table function for debugging tables
+local function printTable(t, indent)
+    indent = indent or ""
+    for k, v in pairs(t) do
+        local key = tostring(k)
+        if type(v) == "table" then
+            print(indent .. key .. " = {")
+            printTable(v, indent .. "  ")
+            print(indent .. "}")
+        else
+            print(indent .. key .. " = " .. tostring(v))
+        end
+    end
+end
 
 local numBatts = 0
 local useCapacity 
@@ -121,115 +137,261 @@ local function fillImagePanel(imagePanel, widget)
 end
 
 
+local function getLayout()
+    local debug = useDebug.getFieldLayout
+    local lineW, lineH = lcd.getWindowSize()
+    local board = system.getVersion().board
+
+    -- Margin & offset based on board
+    local margin, expansionPanelRightOffset
+    if board == "X20" or board == "X20S" or board == "X20PRO" or board == "X20PROAW"
+       or board == "X20R" or board == "X20RS" then
+        margin = 8
+        expansionPanelRightOffset = 32
+    elseif board == "X18R" or board == "X18RS" then
+        margin = 8
+        expansionPanelRightOffset = 32
+    elseif board == "X18" or board == "X18S"
+       or board == "TWXLITE" or board == "TWXLITES" then
+        margin = 6
+        expansionPanelRightOffset = 16
+    elseif board == "X14" or board == "X14S" then
+        margin = 4
+        expansionPanelRightOffset = 24
+    else
+        margin = 6
+        expansionPanelRightOffset = 0
+        if debug then print("Unsupported board: " .. board) end
+    end
+
+    local maxRight = lineW - expansionPanelRightOffset
+    local usableWidth = maxRight - margin
+
+    local fieldH = lineH - (2 * margin) - 2
+    local fieldY = margin
+
+    -- Column definitions & relative size 
+    local columns = {
+        { name = "batName", ratio = 0.47 },  -- Will flex for leftover
+        { name = "batType", ratio = 0.14 },
+        { name = "batCels", ratio = 0.05 },
+        { name = "batCap",  ratio = 0.20 },
+        { name = "batId",   ratio = 0.05 },
+    }
+
+    local ratioSum = 0
+    for _, col in ipairs(columns) do
+        ratioSum = ratioSum + col.ratio
+    end
+
+    -- Figure out how many gaps there are between all columns and figure out how much space that takes from available width
+    local nCols = #columns
+    local totalColSpacing = (nCols - 1) * margin
+    local availableForCols = usableWidth - totalColSpacing
+
+    -- Compute each column width based on previously calculated available width and calculate total used width
+    local colWidth = {}
+    local totalW = 0
+    for _, col in ipairs(columns) do
+        local w = math.floor((col.ratio / ratioSum) * availableForCols)
+        colWidth[col.name] = w
+        totalW = totalW + w
+    end
+
+    -- Adjust batname width to absorb any overflow/underflow
+    local leftover = availableForCols - totalW
+    if leftover ~= 0 then
+        colWidth["batName"] = colWidth["batName"] + leftover
+        if colWidth["batName"] < 1 then
+            colWidth["batName"] = 1
+        end
+    end
+
+    -- Layout table
+    local layout = {
+        margin = margin,
+        fieldH = fieldH,
+        fieldY = fieldY,
+        field  = {},
+        header = {},
+        button = {},
+    }
+
+    -- Assign x positions
+    local x = margin
+    for i, col in ipairs(columns) do
+        layout.field[col.name] = {
+            x = x,
+            y = fieldY,
+            w = colWidth[col.name],
+            h = fieldH
+        }
+        x = x + colWidth[col.name]
+        if i < nCols then
+            x = x + margin
+        end
+    end
+
+    -- Helper function to align fields 
+    local function alignField(label, alignment, anchorRect)
+        local textW = lcd.getTextSize(label)
+        local sidePadding = 10   -- internal horizontal padding
+        local rectW = textW + (2 * sidePadding)
+        local rect = { y = fieldY, w = rectW, h = fieldH }
+
+        if anchorRect then
+            -- Align inside the anchorRect
+            if alignment == "center" then
+                rect.x = anchorRect.x + (anchorRect.w - rectW)/2
+            elseif alignment == "right" then
+                rect.x = anchorRect.x + anchorRect.w - rectW
+            else
+                rect.x = anchorRect.x
+            end
+            rect.y = anchorRect.y
+        else
+            -- Align relative to the entire width
+            if alignment == "right" then
+                -- Flush with the columns' far right
+                rect.x = maxRight - rectW
+            elseif alignment == "center" then
+                rect.x = (lineW - rectW)/2
+            else
+                -- Flush with the same left margin as columns
+                rect.x = margin
+            end
+        end
+
+        return rect
+    end
+
+    -- Headers
+    layout.header.batName = alignField("Name",   "left",   layout.field.batName)
+    layout.header.batType = alignField("Type",   "left",   layout.field.batType)
+    layout.header.batCels = alignField("Cells",  "center", layout.field.batCels)
+    layout.header.batCap  = alignField("Capacity","center", layout.field.batCap)
+    layout.header.batId   = alignField("ID",     "center", layout.field.batId)
+
+    -- Buttons
+    layout.button.batReorder = alignField("Reorder/Edit", "left")
+    layout.button.batAdd     = alignField("Add New",      "right")
+
+    return layout
+end
+
+local reorderMode = false
+
 local function fillBatteryPanel(batteryPanel, widget)
+    -- Debug if enabled
     local debug = useDebug.fillBatteryPanel
     if debug then print("Debug(fillBatteryPanel): Filling Battery Panel") end
 
-    local pos_header_battery
-    local pos_header_capacity
-    local pos_header_id
-    local pos_value_name
-    local pos_value_capacity
-    local pos_value_id
-    local pos_options_button
-    local pos_add_button
+    -- Get the layout
+    local layout = getLayout()
+    -- if debug then printTable(layout) end
 
-    if string.find(radio.board, "X20") or radio.board == "X18R" or radio.board == "X18RS" then
-        -- Header text positions
-        pos_header_battery = {x = 10, y = 8, w = 200, h = 40}
-        pos_header_capacity = {x = 530, y = 8, w = 100, h = 40}
-        pos_header_id = {x = 655, y = 8, w = 100, h = 40}
-        -- Value positions
-        pos_value_name = {x = 8, y = 8, w = 400, h = 40}
-        pos_value_capacity = {x = 504, y = 8, w = 130, h = 40}
-        pos_value_id = {x = 642, y = 8, w = 50, h = 40}
-        pos_options_button = {x = 700, y = 8, w = 50, h = 40}
-        pos_add_button = {x = 642, y = 8, w = 108, h = 40}
-    elseif radio.board == "X18" or radio.board == "X18S" or radio.board == "TWXLITE" or radio.board == "TWXLITES" then
-        -- Header text positions
-        pos_header_battery = {x = 6, y = 6, w = 200, h = 30}
-        pos_header_capacity = {x = 300, y = 6, w = 100, h = 30}
-        pos_header_id = {x = 390, y = 6, w = 100, h = 30}
-        -- Value positions
-        pos_value_name = {x = 6, y = 6, w = 275, h = 30}
-        pos_value_capacity = {x = 288, y = 6, w = 85, h = 30}
-        pos_value_id = {x = 379, y = 6, w = 35, h = 30}
-        pos_options_button = {x = 420, y = 6, w = 35, h = 30}
-        pos_add_button = {x = 375, y = 6, w = 80, h = 30}
-    else
-        -- Currently not tested on other radios (X10,X12,X14)
-    end
+    -- Header text positions for reorder mode
+    local pos_header_move = {x = 665, y = layout.margin, w = 100, h = layout.fieldH}
+
+    -- Reorder button position
+    local pos_delete_button = {x = 416, y = layout.margin, w = 109, h = layout.fieldH}
+    local pos_clone_button = {x = 533, y = layout.margin, w = 101, h = layout.fieldH}
+    local pos_up_button = {x = 642, y = layout.margin, w = 50, h = layout.fieldH}
+    local pos_down_button = {x = 700, y = layout.margin, w = 50, h = layout.fieldH}
 
     -- Create header for the battery panel
     local line = batteryPanel:addLine("")
-    local field = form.addStaticText(line, pos_header_battery, "Name")
-    local field = form.addStaticText(line, pos_header_capacity, "Capacity")
-    local field = form.addStaticText(line, pos_header_id, "ID")
+    form.addStaticText(line, layout.header.batName, "Name")
+    if not reorderMode then
+        form.addStaticText(line, layout.header.batType, "Type")
+        form.addStaticText(line, layout.header.batCels, "Cells")
+        form.addStaticText(line, layout.header.batCap, "Capacity")
+        form.addStaticText(line, layout.header.batId, "ID")
+    else
+        form.addStaticText(line, pos_header_move, "Move")
+    end
 
     for i = 1, numBatts do
         local line = batteryPanel:addLine("")
-        local field = form.addTextField(line, pos_value_name, function() return Batteries[i].name end, function(newName)
+        local field = form.addTextField(line, layout.field.batName, function() return Batteries[i].name end, function(newName)
             Batteries[i].name = newName
             rebuildWidget = true
         end)
 
-        local field = form.addNumberField(line, pos_value_capacity, 0, 20000, function() return Batteries[i].capacity end, function(value)
-            Batteries[i].capacity = value
-            rebuildWidget = true
-        end)
-        field:suffix("mAh")
-        field:step(100)
-        field:default(0)
-        field:enableInstantChange(false)
-        local field = form.addNumberField(line, pos_value_id, 0, 99, function() return Batteries[i].modelID end, function(value)
-            Batteries[i].modelID = value
-            favoritesPanel:clear()
-            fillFavoritesPanel(favoritesPanel, widget)
-            imagePanel:clear()
-            fillImagePanel(imagePanel, widget)
-            rebuildWidget = true
-        end)
-        field:default(0)
-        field:enableInstantChange(false)
-        local field = form.addTextButton(line, pos_options_button, "...", function()
-            local buttons = {
-                {label = "Cancel", action = function() return true end},
-                {label = "Delete", action = function()
-                    table.remove(Batteries, i)
-                    numBatts = numBatts - 1
+        if not reorderMode then
+            local field = form.addChoiceField(line, layout.field.batType, {{"LiPo", 1},{ "LiHV", 2}}, function() return Batteries[i].type end, function(value) 
+                Batteries[i].type = value
+            end)
+
+            local field = form.addNumberField(line, layout.field.batCels, 1, 16, function() return Batteries[i].cells end, function(value)
+                Batteries[i].cells = value
+                rebuildWidget = true
+            end)
+
+            local field = form.addNumberField(line, layout.field.batCap, 0, 20000, function() return Batteries[i].capacity end, function(value)
+                Batteries[i].capacity = value
+                rebuildWidget = true
+            end)
+            field:suffix("mAh")
+            field:step(100)
+            field:default(0)
+            field:enableInstantChange(false)
+            local field = form.addNumberField(line, layout.field.batId , 0, 99, function() return Batteries[i].modelID end, function(value)
+                Batteries[i].modelID = value
+                favoritesPanel:clear()
+                fillFavoritesPanel(favoritesPanel, widget)
+                imagePanel:clear()
+                fillImagePanel(imagePanel, widget)
+                rebuildWidget = true
+            end)
+            field:default(0)
+            field:enableInstantChange(false)
+
+        else
+            local deleteButton = form.addTextButton(line, pos_delete_button, "Delete", function()
+                table.remove(Batteries, i)
+                numBatts = numBatts - 1
+                batteryPanel:clear()
+                fillBatteryPanel(batteryPanel, widget)
+                return true
+            end)
+            local cloneButton = form.addTextButton(line, pos_clone_button, "Clone", function()
+                numBatts = numBatts + 1
+                Batteries[numBatts] = {name = Batteries[i].name .. " (Copy)", capacity = Batteries[i].capacity, modelID = Batteries[i].modelID}
+                batteryPanel:clear()
+                fillBatteryPanel(batteryPanel, widget)
+                return true
+            end)
+            -- Add Up/Down buttons in reorder mode
+            if i > 1 then
+                local upButton = form.addTextButton(line, pos_up_button, "↑", function()
+                    Batteries[i], Batteries[i-1] = Batteries[i-1], Batteries[i]
                     batteryPanel:clear()
                     fillBatteryPanel(batteryPanel, widget)
-                    favoritesPanel:clear()
-                    fillFavoritesPanel(favoritesPanel, widget)
-                    rebuildWidget = true
                     return true
-                end},
-                {label = "Clone", action = function()
-                    local newBattery = {name = Batteries[i].name, capacity = Batteries[i].capacity, modelID = Batteries[i].modelID, favorite = false}
-                    table.insert(Batteries, newBattery)
-                    numBatts = numBatts + 1
-                    favoritesPanel:clear()
-                    fillFavoritesPanel(favoritesPanel, widget)
-                    imagePanel:clear()
-                    fillImagePanel(imagePanel, widget)
-                    rebuildWidget = true
+                end)
+            end
+            if i < numBatts then
+                local downButton = form.addTextButton(line, pos_down_button, "↓", function()
+                    Batteries[i], Batteries[i+1] = Batteries[i+1], Batteries[i]
+                    batteryPanel:clear()
+                    fillBatteryPanel(batteryPanel, widget)
                     return true
-                end}
-            }
-            form.openDialog({
-                title = (Batteries[i].name ~= "" and Batteries[i].name or "Unnamed Battery"),
-                message = "Select Action",
-                width = 350,
-                buttons = buttons,
-                options = TEXT_LEFT,
-            })
-        end)
+                end)
+            end
+        end
     end
 
     local line = batteryPanel:addLine("")
-    local field = form.addTextButton(line, pos_add_button, "Add New", function()
+    local field = form.addTextButton(line, layout.button.batReorder, reorderMode and "Done" or "Reorder/Edit", function()
+        reorderMode = not reorderMode
+        batteryPanel:clear()
+        fillBatteryPanel(batteryPanel, widget)
+    end)
+    
+    local field = form.addTextButton(line, layout.button.batAdd, "Add New", function()
         numBatts = numBatts + 1
-        Batteries[numBatts] = {name = "Battery " .. numBatts, capacity = 0, modelID = 0}
+        Batteries[numBatts] = {name = "Battery " .. numBatts, type = 1, cells = 6, capacity = 0, modelID = 0}
         batteryPanel:clear()
         fillBatteryPanel(batteryPanel, widget)
         favoritesPanel:clear()
@@ -261,19 +423,16 @@ local function fillPrefsPanel(prefsPanel, widget)
     local line = prefsPanel:addLine("Enable Voltage Check")
     local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
     if checkBatteryVoltageOnConnect then
-        -- Set default min charged cell voltage to 4.15V
-        if minChargedCellVoltage == nil then minChargedCellVoltage = 415 end
         local line = prefsPanel:addLine("Min Charged Volt/Cell")
-        local field = form.addNumberField(line, nil, 400, 430, function() return minChargedCellVoltage end, function(value) minChargedCellVoltage = value end)
+        local field = form.addNumberField(line, nil, 400, 430, function() return minChargedCellVoltage or 415 end, function(value) minChargedCellVoltage = value end)
         field:decimals(2)
         field:suffix("V")
         field:enableInstantChange(false)
         local line = prefsPanel:addLine("Haptic Warning")
         local field = form.addBooleanField(line, nil, function() return doHaptic end, function(newValue) doHaptic = newValue rebuildPrefs = true end)
         if doHaptic then 
-            if hapticPattern == nil then hapticPattern = 1 end
             local line = prefsPanel:addLine("Haptic Pattern")
-            local field = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern end, function(newValue) hapticPattern = newValue end)
+            local field = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
         end
     end
 end
@@ -794,6 +953,8 @@ read = function ()
         for i, battery in ipairs(Batteries) do
             print(string.format("  Battery %d:", i))
             print(string.format("    Name: %s", battery.name or "N/A"))
+            print(string.format("    Type: %s", battery.type or "N/A"))
+            print(string.format("    Cells: %d", battery.cells or 0))
             print(string.format("    Capacity: %d mAh", battery.capacity or 0))
             print(string.format("    Model ID: %s", tostring(battery.modelID or "N/A")))
             print(string.format("    Favorite: %s", battery.favorite and "Yes" or "No"))
