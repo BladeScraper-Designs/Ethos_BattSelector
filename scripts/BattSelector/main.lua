@@ -2,12 +2,14 @@
 
 -- Include json library for read/write of config and battery data
 local json = require("lib.dkjson")
+local layouts = require("lib.layout")
 
 -- Predeclare read and write functions to allow calling them before definition
 local read  -- Function to load configuration and battery data from JSON
 local write -- Function to save configuration and battery data to JSON
+
 local configLoaded = false  -- Flag to indicate if the configuration has been loaded yet
-local layoutModule = require("lib.layout")
+
 
 -- Set to true to enable debug output for each function as needed
 local useDebug = {
@@ -140,18 +142,14 @@ end
 local reorderMode = false
 
 local function fillBatteryPanel(batteryPanel, widget)
-    -- Debug if enabled
     local debug = useDebug.fillBatteryPanel
-    if debug then print("Debug(fillBatteryPanel): Filling Battery Panel") end
 
     -- Get the layout
-    local layout = layoutModule.getLayout("batteryPanel")
-    print("Layout:")
-    printTable(layout.field)
-    -- if debug then printTable(layout) end
-
-    -- Header text positions for reorder mode
-    local pos_header_move = {x = 665, y = layout.margin, w = 100, h = layout.fieldH}
+    local layout = layouts.getLayout("batteryPanel", reorderMode)
+    if debug then 
+        print("Current Layout:")
+        printTable(layout) 
+    end
 
     -- Create header for the battery panel
     local line = batteryPanel:addLine("")
@@ -162,7 +160,7 @@ local function fillBatteryPanel(batteryPanel, widget)
         form.addStaticText(line, layout.header.batCap, "Capacity")
         form.addStaticText(line, layout.header.batId, "ID")
     else
-        form.addStaticText(line, pos_header_move, "Move")
+        form.addStaticText(line, layout.header.batMove, "Move")
     end
 
     for i = 1, numBatts do
