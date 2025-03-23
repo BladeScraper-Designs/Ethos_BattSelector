@@ -694,7 +694,7 @@ local function build(widget)
             end
         end
     end
-
+    
     if selectedBattery == nil then
         selectedBattery = 1
     end
@@ -718,10 +718,10 @@ local function build(widget)
     if widgetInit then
         if debug then print("Debug(build): Widget Init") end
         
-        if radio.board:match("^X20") or radio.board == "X18R" or radio.board == "X18RS" or radio.board == "X14" or radio.board == "X14S" then
-            fieldHeight = 40
-        else
+        if radio.board == "X18" or radio.board == "X18S" then
             fieldHeight = 30
+        else
+            fieldHeight = 40
         end
 
         local padding = 10
@@ -743,7 +743,7 @@ local function build(widget)
         local choiceField = form.addChoiceField(line, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
             selectedBattery = value 
         end)
-    end
+    end 
 end
 
 local lastModelID = nil
