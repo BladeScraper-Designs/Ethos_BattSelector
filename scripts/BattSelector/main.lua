@@ -727,6 +727,9 @@ local function build(widget)
         local padding = 10
         fieldWidth, _ = lcd.getWindowSize()
         fieldWidth = fieldWidth - padding * 2
+        if fieldWidth > 200 then
+            fieldWidth = 200
+        end
 
         if debug then print("Debug(build): Creating form") end
         form.create()
