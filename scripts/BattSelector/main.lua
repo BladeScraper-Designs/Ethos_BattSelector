@@ -1,27 +1,17 @@
 -- Lua Battery Selector and Alarm widget
+-- Version: 3.0.0
+local battsel = {}
 
--- Include json library for read/write of config and battery data
-local json = require("lib.dkjson")
-local layouts = require("lib.layout")
-
--- Predeclare read and write functions to allow calling them before definition
-local read  -- Function to load configuration and battery data from JSON
-local write -- Function to save configuration and battery data to JSON
-
-local configLoaded = false  -- Flag to indicate if the configuration has been loaded yet
-
-
--- Set to true to enable debug output for each function as needed
-local useDebug = {
-    getLayout = true,
+-- Set to true to enable debug output for each function as required
+battsel.useDebug = {
     fillFavoritesPanel = false,
     fillImagePanel = false,
-    fillBatteryPanel = true,
+    fillBatteryPanel = false,
     fillPrefsPanel = false,
     doBatteryVoltageCheck = false,
     updateRemainingSensor = false,
     getmAh = false,
-    create = true,
+    create = false,
     build = false,
     read = false,
     write = false,
@@ -30,27 +20,23 @@ local useDebug = {
     configure = false
 }
 
--- Print table function for debugging tables
-local function printTable(t, indent)
-    indent = indent or ""
-    for k, v in pairs(t) do
-        local key = tostring(k)
-        if type(v) == "table" then
-            print(indent .. key .. " = {")
-            printTable(v, indent .. "  ")
-            print(indent .. "}")
-        else
-            print(indent .. key .. " = " .. tostring(v))
-        end
-    end
-end
+-- Required libraries
+local json = require("lib.dkjson") -- JSON library
+local layouts = require("lib.layout") -- Layout library
+local utils = require("lib.utils") -- Utility library
 
-local numBatts = 0
-local useCapacity 
-local Batteries = {}
-local uniqueIDs = {}
-local modelImageSwitching = false
-local Images = {}
+local read, write
+
+-- Get radio information
+local radio = system.getVersion()
+local LCD_W, LCD_H = radio.lcdWidth, radio.lcdHeight
+print("DEBUG(battsel): Radio: " .. radio.board)
+print("DEBUG(battsel): LCD Width: " .. LCD_W .. " Height: " .. LCD_H)
+
+local configLoaded = false  -- Flag to indicate if the configuration has been loaded yet
+
+local formLines = {}
+local formFields = {}
 
 local favoritesPanel
 local imagePanel
@@ -58,22 +44,57 @@ local batteryPanel
 local prefsPanel
 
 local rebuildWidget = false
-local rebuildImages = false
-local rebuildPrefs = false
 
-local tlmActive = false
+-- Putting these here to remind myself to implement them later
+battsel.source = {
+    telem = nil,
+    voltage = nil,
+    consumption = nil,
+    cells = nil,
+    modelID = nil,
+    percent = nil
+}
+
 local currentModelID = nil
 
--- Get Radio Version to determine field size
-local radio = system.getVersion()
+--- Dynamically enables or disables specific form fields based on the current configuration.
+--- This function evaluates the values in the `battsel.Config` table and adjusts the form fields
+--- accordingly to ensure that only valid options are available to the user.
+local function updateFieldStates()
+    local updates = {
+        {"VoltageCheckMinCellV", battsel.Config.checkBatteryVoltageOnConnect},
+        {"EnableVoltageCheckHaptic", battsel.Config.checkBatteryVoltageOnConnect},
+        {"VoltageCheckHapticPattern", battsel.Config.checkBatteryVoltageOnConnect and battsel.Config.doHaptic},
+        {"ImagePickerDefault", battsel.Config.modelImageSwitching},
+        {"ImagePickerId", battsel.Config.modelImageSwitching}
+    }
+
+    -- Iterates over the `updates` table, where each element is expected to be a pair
+    -- containing a field name and a condition. For each pair:
+    -- 1. Retrieves the field name (`fieldName`) and condition (`condition`) from the current update.
+    -- 2. Checks if the `formFields` table contains an entry for the given `fieldName`.
+    -- 3. If the field exists, calls the `enable` method on the corresponding form field,
+    --    passing the `condition` as an argument to enable or disable the field dynamically.
+    for _, update in ipairs(updates) do
+        local fieldName, condition = update[1], update[2]
+        if formFields[fieldName] then
+            formFields[fieldName]:enable(condition)
+        end
+    end
+end
+
+
+local uniqueIDs = {}
 
 -- Favorites Panel in Configure
-local function fillFavoritesPanel(favoritesPanel, widget)
+local function fillFavoritesPanel(favoritesPanel)
+    local debug = battsel.useDebug.fillFavoritesPanel
+    
     -- Create list of Unique IDs from on all Batteries' IDs
     uniqueIDs = {}
     local seen = {}
-    for i = 1, #Batteries do
-        local id = Batteries[i].modelID
+    for i = 1, #battsel.Data.Batteries do
+        local id = battsel.Data.Batteries[i].modelID
         if not seen[id] then
             seen[id] = true
             table.insert(uniqueIDs, id)
@@ -86,22 +107,22 @@ local function fillFavoritesPanel(favoritesPanel, widget)
 
         -- Create Favorite picker field
         local matchingNames = {}
-        for j = 1, numBatts do
-            if Batteries[j].modelID == id then
-                matchingNames[#matchingNames + 1] = {Batteries[j].name, j}
+        for j = 1, #battsel.Data.Batteries do
+            if battsel.Data.Batteries[j].modelID == id then
+                matchingNames[#matchingNames + 1] = {battsel.Data.Batteries[j].name, j}
             end
         end
-        local field = form.addChoiceField(line, nil, matchingNames, function()
-            for j = 1, #Batteries do
-                if Batteries[j].modelID == id and Batteries[j].favorite then
+        formFields["FavoriteSelectionField"] = form.addChoiceField(line, nil, matchingNames, function()
+            for j = 1, #battsel.Data.Batteries do
+                if battsel.Data.Batteries[j].modelID == id and battsel.Data.Batteries[j].favorite then
                     return j
                 end
             end
             return nil
         end, function(value)
-            for j = 1, #Batteries do
-                if Batteries[j].modelID == id then
-                    Batteries[j].favorite = (j == value)
+            for j = 1, #battsel.Data.Batteries do
+                if battsel.Data.Batteries[j].modelID == id then
+                    battsel.Data.Batteries[j].favorite = (j == value)
                 end
             end
         end)
@@ -109,46 +130,45 @@ local function fillFavoritesPanel(favoritesPanel, widget)
 end
 
 
-local function fillImagePanel(imagePanel, widget)
-    local debug = useDebug.fillImagePanel
+local function fillImagePanel(imagePanel)
+    local debug = battsel.useDebug.fillImagePanel
 
     local line = imagePanel:addLine("Enable Model Image Switching")
-    local field = form.addBooleanField(line, nil, function() return modelImageSwitching end, function(newValue) 
+    formFields["EnableImageSwitching"] = form.addBooleanField(line, nil, function() return battsel.Config.modelImageSwitching end, function(newValue) 
         if debug then print("Model Image Switching: " .. tostring(newValue)) end
-        modelImageSwitching = newValue 
-        rebuildImages = true
+        battsel.Config.modelImageSwitching = newValue
+        updateFieldStates()
     end)
     
-    if modelImageSwitching then
-        local line = imagePanel:addLine("Default Image")
-        local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return Images.Default or "" end, function(newValue) Images.Default = newValue end)
-        if debug then print("Debug(fillImagePanel):" .. "Default Image: " .. Images.Default) end
+    local line = imagePanel:addLine("Default Image")
+    formFields["ImagePickerDefault"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return battsel.Config.Images.Default or "" end, function(newValue) battsel.Config.Images.Default = newValue end)
+    if debug then print("DEBUG(fillImagePanel):" .. "Default Image: " .. battsel.Config.Images.Default) end
 
-        -- List out available Model IDs in the Favorites panel
-        for i, id in ipairs(uniqueIDs) do
-            local line = imagePanel:addLine("ID " .. id .. " Image")
-            local key = tostring(id)  -- Convert to string
-        
-            local field = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-                return Images[key] or ""
-            end, function(newValue)
-                Images[key] = newValue
-            end)
-            if debug then print("Debug(fillImagePanel): Image for ID " .. id .. ": " .. (Images[key] or "")) end
-        end
+    -- List out available Model IDs in the Favorites panel
+    for i, id in ipairs(uniqueIDs) do
+        local line = imagePanel:addLine("ID " .. id .. " Image")
+        local key = tostring(id)  -- Convert to string
+    
+        formFields["ImagePickerId"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
+            return battsel.Config.Images[key] or ""
+        end, function(newValue)
+            battsel.Config.Images[key] = newValue
+        end)
+        if debug then print("DEBUG(fillImagePanel): Image for ID " .. id .. ": " .. (battsel.Config.Images[key] or "")) end
     end
 end
 
+
 local reorderMode = false
 
-local function fillBatteryPanel(batteryPanel, widget)
-    local debug = useDebug.fillBatteryPanel
+local function fillBatteryPanel(batteryPanel)
+    local debug = battsel.useDebug.fillBatteryPanel
 
     -- Get the layout
     local layout = layouts.getLayout("batteryPanel", reorderMode)
     if debug then 
-        print("Current Layout:")
-        printTable(layout) 
+        -- print("Current Layout:")
+        -- utils.printTable(layout) 
     end
 
     -- Create header for the battery panel
@@ -158,76 +178,78 @@ local function fillBatteryPanel(batteryPanel, widget)
         form.addStaticText(line, layout.header.batType, "Type")
         form.addStaticText(line, layout.header.batCels, "Cells")
         form.addStaticText(line, layout.header.batCap, "Capacity")
-        form.addStaticText(line, layout.header.batId, "ID")
+        form.addStaticText(line, layout.header.batID, "ID")
     else
         form.addStaticText(line, layout.header.batMove, "Move")
     end
 
-    for i = 1, numBatts do
+    for i = 1, #battsel.Data.Batteries do
         local line = batteryPanel:addLine("")
-        local field = form.addTextField(line, layout.field.batName, function() return Batteries[i].name end, function(newName)
-            Batteries[i].name = newName
+        formFields["BatteryNameField"] = form.addTextField(line, layout.field.batName, function() return battsel.Data.Batteries[i].name end, function(newName)
+            battsel.Data.Batteries[i].name = newName
             rebuildWidget = true
         end)
 
         if not reorderMode then
-            local field = form.addChoiceField(line, layout.field.batType, {{"LiPo", 1},{ "LiHV", 2}}, function() return Batteries[i].type end, function(value) 
-                Batteries[i].type = value
+            formFields["BatteryTypeField"] = form.addChoiceField(line, layout.field.batType, {{"LiPo", 1},{ "LiHV", 2}}, function() return battsel.Data.Batteries[i].type end, function(value) 
+                battsel.Data.Batteries[i].type = value
             end)
 
-            local field = form.addNumberField(line, layout.field.batCels, 1, 16, function() return Batteries[i].cells end, function(value)
-                Batteries[i].cells = value
+            formFields["BatteryCellsField"] = form.addNumberField(line, layout.field.batCels, 1, 16, function() return battsel.Data.Batteries[i].cells end, function(value)
+                battsel.Data.Batteries[i].cells = value
                 rebuildWidget = true
             end)
+            formFields["BatteryCellsField"]:help("Number of cells in the battery.  Used for battery voltage check.")
 
-            local field = form.addNumberField(line, layout.field.batCap, 0, 20000, function() return Batteries[i].capacity end, function(value)
-                Batteries[i].capacity = value
+            formFields["BatteryCapacityField"] = form.addNumberField(line, layout.field.batCap, 0, 20000, function() return battsel.Data.Batteries[i].capacity end, function(value)
+                battsel.Data.Batteries[i].capacity = value
                 rebuildWidget = true
             end)
-            field:suffix("mAh")
-            field:step(100)
-            field:default(0)
-            field:enableInstantChange(false)
-            local field = form.addNumberField(line, layout.field.batId , 0, 99, function() return Batteries[i].modelID end, function(value)
-                Batteries[i].modelID = value
+            formFields["BatteryCapacityField"]:suffix("mAh")
+            formFields["BatteryCapacityField"]:step(100)
+            formFields["BatteryCapacityField"]:default(0)
+            formFields["BatteryCapacityField"]:enableInstantChange(false)
+            formFields["BatteryCapacityField"]:help("Battery rated capacity in mAh.  Used for remaining percent calculations.")
+            
+            formFields["BatteryIDField"] = form.addNumberField(line, layout.field.batID , 0, 99, function() return battsel.Data.Batteries[i].modelID end, function(value)
+                battsel.Data.Batteries[i].modelID = value
                 favoritesPanel:clear()
-                fillFavoritesPanel(favoritesPanel, widget)
+                fillFavoritesPanel(favoritesPanel, battsel)
                 imagePanel:clear()
-                fillImagePanel(imagePanel, widget)
+                fillImagePanel(imagePanel, battsel)
                 rebuildWidget = true
             end)
-            field:default(0)
-            field:enableInstantChange(false)
+            formFields["BatteryIDField"]:default(0)
+            formFields["BatteryIDField"]:enableInstantChange(false)
+            formFields["BatteryIDField"]:help("Rotorflight Model ID to associate with this battery. Used for model image switching and favorites.")
 
         else
-            local deleteButton = form.addTextButton(line, layout.field.batDelete, "Delete", function()
-                table.remove(Batteries, i)
-                numBatts = numBatts - 1
+            formFields["DeleteButton"] = form.addTextButton(line, layout.field.batDel, "Delete", function()
+                table.remove(battsel.Data.Batteries, i)
                 batteryPanel:clear()
-                fillBatteryPanel(batteryPanel, widget)
+                fillBatteryPanel(batteryPanel)
                 return true
             end)
-            local cloneButton = form.addTextButton(line, layout.field.batClone, "Clone", function()
-                numBatts = numBatts + 1
-                Batteries[numBatts] = {name = Batteries[i].name .. " (Copy)", capacity = Batteries[i].capacity, modelID = Batteries[i].modelID}
+            formFields["CloneButton"] = form.addTextButton(line, layout.field.batClone, "Clone", function()
+                battsel.Data.Batteries[#battsel.Data.Batteries] = {name = battsel.Data.Batteries[i].name .. " (Copy)", capacity = battsel.Data.Batteries[i].capacity, modelID = battsel.Data.Batteries[i].modelID}
                 batteryPanel:clear()
-                fillBatteryPanel(batteryPanel, widget)
+                fillBatteryPanel(batteryPanel)
                 return true
             end)
             -- Add Up/Down buttons in reorder mode
             if i > 1 then
-                local upButton = form.addTextButton(line, layout.field.batUp, "↑", function()
-                    Batteries[i], Batteries[i-1] = Batteries[i-1], Batteries[i]
+                formFields["UpButton"] = form.addTextButton(line, layout.field.batUp, "↑", function()
+                    battsel.Data.Batteries[i], battsel.Data.Batteries[i-1] = battsel.Data.Batteries[i-1], battsel.Data.Batteries[i]
                     batteryPanel:clear()
-                    fillBatteryPanel(batteryPanel, widget)
+                    fillBatteryPanel(batteryPanel)
                     return true
                 end)
             end
-            if i < numBatts then
-                local downButton = form.addTextButton(line, layout.field.batDown, "↓", function()
-                    Batteries[i], Batteries[i+1] = Batteries[i+1], Batteries[i]
+            if i < #battsel.Data.Batteries then
+                formFields["DownButton"] = form.addTextButton(line, layout.field.batDown, "↓", function()
+                    battsel.Data.Batteries[i], battsel.Data.Batteries[i+1] = battsel.Data.Batteries[i+1], battsel.Data.Batteries[i]
                     batteryPanel:clear()
-                    fillBatteryPanel(batteryPanel, widget)
+                    fillBatteryPanel(batteryPanel)
                     return true
                 end)
             end
@@ -235,75 +257,75 @@ local function fillBatteryPanel(batteryPanel, widget)
     end
 
     local line = batteryPanel:addLine("")
-    local field = form.addTextButton(line, layout.button.batReorder, reorderMode and "Done" or "Reorder/Edit", function()
+    formFields["ReorderButton"] = form.addTextButton(line, layout.button.batReorder, reorderMode and "Done" or "Reorder/Edit", function()
         reorderMode = not reorderMode
         batteryPanel:clear()
-        fillBatteryPanel(batteryPanel, widget)
+        fillBatteryPanel(batteryPanel, battsel)
     end)
     
-    local field = form.addTextButton(line, layout.button.batAdd, "Add New", function()
-        numBatts = numBatts + 1
-        Batteries[numBatts] = {name = "Battery " .. numBatts, type = 1, cells = 6, capacity = 0, modelID = 0}
+    formFields["AddButton"] = form.addTextButton(line, layout.button.batAdd, "Add New", function()
+        table.insert(battsel.Data.Batteries, {
+            name = "Battery " .. (#battsel.Data.Batteries + 1),
+            type = 1,
+            cells = 6,
+            capacity = 0,
+            modelID = 0
+        })
         batteryPanel:clear()
-        fillBatteryPanel(batteryPanel, widget)
+        fillBatteryPanel(batteryPanel, battsel)
         favoritesPanel:clear()
-        fillFavoritesPanel(favoritesPanel, widget)
+        fillFavoritesPanel(favoritesPanel, battsel)
         imagePanel:clear()
-        fillImagePanel(imagePanel, widget)
+        fillImagePanel(imagePanel, battsel)
         rebuildWidget = true
     end)
 end
 
-
-local checkBatteryVoltageOnConnect
-local minChargedCellVoltage
-local doHaptic
 local hapticPatterns = {{". . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . - - . - - .", 3}}
 local hapticPattern
 
 -- Settings Panel
-local function fillPrefsPanel(prefsPanel, widget)
-    local debug = useDebug.fillPrefsPanel
-    if debug then print("Debug(fillPrefsPanel): Filling Preferences Panel") end
+local function fillPrefsPanel(prefsPanel)
+    local debug = battsel.useDebug.fillPrefsPanel
+    if debug then print("DEBUG(fillPrefsPanel): Filling Preferences Panel") end
 
     local line = prefsPanel:addLine("Use Capacity")
-    local field = form.addNumberField(line, nil, 50, 100, function() return useCapacity or 80 end, function(value) useCapacity = value end)
-    field:suffix("%")
-    field:default(80)
+    formFields["UseCapacityField"] = form.addNumberField(line, nil, 50, 100, function() return battsel.Config.useCapacity or 80 end, function(value) battsel.Config.useCapacity = value end)
+    formFields["UseCapacityField"]:suffix("%")
+    formFields["UseCapacityField"]:default(80)
+    formFields["UseCapacityField"]:help("Percentage of battery capacity to use for remaining percent calculations.  e.g. 80% means 4000mAh on a 5000mAh battery is 0% Remaining.")
 
-    -- Create field to enable/disable battery voltage checking on connect
     local line = prefsPanel:addLine("Enable Voltage Check")
-    local field = form.addBooleanField(line, nil, function() return checkBatteryVoltageOnConnect end, function(newValue) checkBatteryVoltageOnConnect = newValue rebuildPrefs = true end)
-    if checkBatteryVoltageOnConnect then
-        local line = prefsPanel:addLine("Min Charged Volt/Cell")
-        local field = form.addNumberField(line, nil, 400, 430, function() return minChargedCellVoltage or 415 end, function(value) minChargedCellVoltage = value end)
-        field:decimals(2)
-        field:suffix("V")
-        field:enableInstantChange(false)
-        local line = prefsPanel:addLine("Haptic Warning")
-        local field = form.addBooleanField(line, nil, function() return doHaptic end, function(newValue) doHaptic = newValue rebuildPrefs = true end)
-        if doHaptic then 
-            local line = prefsPanel:addLine("Haptic Pattern")
-            local field = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
-        end
-    end
+    formFields["EnableVoltageCheck"] = form.addBooleanField(line, nil, function() return battsel.Config.checkBatteryVoltageOnConnect end, function(newValue) battsel.Config.checkBatteryVoltageOnConnect = newValue updateFieldStates() end)
+    
+    local line = prefsPanel:addLine("Min Charged Volt/Cell")
+    formFields["VoltageCheckMinCellV"] = form.addNumberField(line, nil, 400, 435, function() return battsel.Config.minChargedCellVoltage or 415 end, function(value) battsel.Config.minChargedCellVoltage = value end)
+    formFields["VoltageCheckMinCellV"]:decimals(2)
+    formFields["VoltageCheckMinCellV"]:suffix("V")
+    formFields["VoltageCheckMinCellV"]:enableInstantChange(false)
+    formFields["VoltageCheckMinCellV"]:help("Minimum voltage per cell to consider battery charged.  Default is 4.15V")
+
+    local line = prefsPanel:addLine("Haptic Warning")
+    formFields["EnableVoltageCheckHaptic"] = form.addBooleanField(line, nil, function() return battsel.Config.doHaptic end, function(newValue) battsel.Config.doHaptic = newValue updateFieldStates() end)
+    local line = prefsPanel:addLine("Haptic Pattern")
+    formFields["VoltageCheckHapticPattern"] = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
 end
 
 -- Alerts Panel, commented out for now as not in use
--- local function fillAlertsPanel(alertsPanel, widget)
+-- local function fillAlertsPanel(alertsPanel, battsel)
 --     local line = alertsPanel:addLine("Eventually")
 -- end
 
-local cellSensor
-local voltageSensor
 local voltageDialogDismissed = false
 local doneVoltageCheck = false
 local batteryConnectTime
 
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
-local function doBatteryVoltageCheck(widget)
-    local debug = useDebug.doBatteryVoltageCheck
-    local minChargedCellVoltage = minChargedCellVoltage / 100 or 4.15
+local function doBatteryVoltageCheck()
+    local debug = battsel.useDebug.doBatteryVoltageCheck
+
+    -- Divide by 100 because the value is stored as a whole number (415 = 4.15V)
+    local minChargedCellVoltage = battsel.Config.minChargedCellVoltage / 100 or 4.15
 
     local cellCount
     local currentVoltage
@@ -314,73 +336,82 @@ local function doBatteryVoltageCheck(widget)
     end
 
     if batteryConnectTime and (os.clock() - batteryConnectTime) <= 60 then
-        -- Check if cell count sensor exists (RF 2.2? only), if not, get it
-        if not cellSensor then
-            cellSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Cell Count"})
-            if cellSensor then
-                if debug then print("Debug(doBatteryVoltageCheck): RF Cell Count sensor found.  Continuing") end
+        -- Check if cell count sensor exists in battsel.sensors, if not, get it
+        if not battsel.source.cells then
+            battsel.source.cells = system.getSource({category = CATEGORY_TELEMETRY, name = "Cell Count"})
+            if battsel.source.cells then
+                if debug then print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor found. Continuing") end
             else
-                if debug then print("Debug(doBatteryVoltageCheck): RF Cell Count sensor not found.  Proceeding with estimation from Voltage") end
+                if debug then print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor not found. Proceeding with estimation from Voltage") end
             end
         end
 
-        -- Check if voltage sensor exists, if not, get it
-        if not voltageSensor then
-            voltageSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
-            if voltageSensor then 
-                if debug then print("Debug(doBatteryVoltageCheck): Voltage Sensor Found.  Continuing") end
+        -- Check if voltage sensor exists in battsel.sensors, if not, get it
+        if not battsel.source.voltage then
+            -- Try to obtain the voltage sensor from RFSUITE first
+            battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
+            if battsel.source.voltage then
+                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor found from RFSUITE: " .. battsel.source.voltage:name()) end
             else
-                if debug then print ("Debug(doBatteryVoltageCheck): Voltage sensor not found.  Exiting") end
-                return
+                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor not found from RFSUITE, proceeding with legacy search.") end
+                -- Fallback to legacy method: search by name in the telemetry category
+                battsel.source.voltage = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
+                if battsel.source.voltage then
+                    if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor Found: " .. battsel.source.voltage:name()) end
+                else
+                    if debug then print("DEBUG(doBatteryVoltageCheck): Could not get Voltage sensor!") end
+                    return
+                end
             end
         end
-        
-        if cellSensor and voltageSensor then
-            if cellSensor:value() == nil or voltageSensor:value() == nil then
-                if debug then print("Debug(doBatteryVoltageCheck): Cell Count or Voltage sensor reading is nil.  Exiting") end
+
+        if battsel.source.cells and battsel.source.voltage then
+            if battsel.source.cells:value() == nil or battsel.source.voltage:value() == nil then
+                if debug then print("DEBUG(doBatteryVoltageCheck): Cell Count or Voltage sensor reading is nil. Exiting") end
                 return
             end
-            currentVoltage = voltageSensor:value()
-            cellCount = math.floor(cellSensor:value())
-            isCharged = currentVoltage >= cellCount * minChargedCellVoltage 
+            currentVoltage = battsel.source.voltage:value()
+            cellCount = math.floor(battsel.source.cells:value())
+            isCharged = currentVoltage >= cellCount * minChargedCellVoltage
             doneVoltageCheck = true
-        elseif voltageSensor then
-            if voltageSensor:value() == nil then 
-                if debug then print("Debug(doBatteryVoltageCheck): Voltage sensor reading is nil.  Exiting") end
+        elseif battsel.source.voltage then
+            if battsel.source.voltage:value() == nil then
+                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor reading is nil. Exiting") end
                 return
             end
-            currentVoltage = voltageSensor:value()
+            currentVoltage = battsel.source.voltage:value()
             -- Estimate cell count based on voltage
             cellCount = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
             -- To prevent accidentally reading a very low battery as a lower cell count than actual, add 1 to cellCount if the voltage is higher than cellCount * 4.35 (HV battery max cell voltage)
             if currentVoltage >= cellCount * 4.35 then
                 cellCount = cellCount + 1
-            end    
+            end
         end
 
-        if cellCount == 0  then
+        if cellCount == 0 then
             cellCount = 1
         end
 
-        if cellCount and currentVoltage then 
-            isCharged = currentVoltage >= cellCount * minChargedCellVoltage 
-            if debug then 
-                print("Debug(doBatteryVoltageCheck): Voltage Sensor Found.  Reading: " .. currentVoltage .. "V")
-                print("Debug(doBatteryVoltageCheck): Cell Count: " .. cellCount)
-                print("Debug(doBatteryVoltageCheck): Battery Charged: " .. tostring(isCharged)) 
+        if cellCount and currentVoltage then
+            isCharged = currentVoltage >= cellCount * minChargedCellVoltage
+            if debug then
+                print("DEBUG(doBatteryVoltageCheck): Voltage Sensor Found. Reading: " .. currentVoltage .. "V")
+                print("DEBUG(doBatteryVoltageCheck): Cell Count: " .. cellCount)
+                print("DEBUG(doBatteryVoltageCheck): Battery Charged: " .. tostring(isCharged))
             end
 
             if isCharged == false and voltageDialogDismissed == false then
-                if debug then print ("Debug(doBatteryVoltageCheck): Battery not charged!  Popup dialog") end
+                if debug then print("Debug(doBatteryVoltageCheck): Battery not charged! Popup dialog") end
                 local buttons = {
                     {label = "OK", action = function()
-                        voltageDialogDismissed = true 
-                        if debug then print("Debug(doBatteryVoltageCheck): Voltage Dialog Dismissed") end
-                        return true 
-                    end}}
-                if doHaptic then
-                    if debug then print("Debug(doBatteryVoltageCheck): Playing Haptic") end
-                    system.playHaptic(hapticPatterns[hapticPattern][1])
+                        voltageDialogDismissed = true
+                        if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Dialog Dismissed") end
+                        return true
+                    end}
+                }
+                if battsel.Config.doHaptic then
+                    if debug then print("DEBUG(doBatteryVoltageCheck): Playing Haptic") end
+                    -- system.playHaptic(hapticPatterns[hapticPattern][1])
                 end
                 form.openDialog({
                     title = "Low Battery Voltage",
@@ -390,37 +421,36 @@ local function doBatteryVoltageCheck(widget)
                     options = TEXT_LEFT,
                 })
             end
-            doneVoltageCheck = true 
+            doneVoltageCheck = true
         end
     end
 end
 
 
-local percentSensor
 local newPercent = 100
 
-local function updateRemainingSensor(widget)
-    local debug = useDebug.updateRemainingSensor
-    if percentSensor == nil then
+local function updateRemainingSensor()
+    local debug = battsel.useDebug.updateRemainingSensor
+    if not battsel.source.percent then
         if debug then print("Searching for Remaining Sensor") end
-        percentSensor = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402, physId = 0x11, name = "Remaining"})
-        if percentSensor == nil then
+        battsel.source.percent = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402, physId = 0x11, name = "Remaining"})
+        if not battsel.source.percent then
             print("Remaining Sensor Not Found. Creating...")
-            percentSensor = model.createSensor()
-            percentSensor:name("Remaining")
-            percentSensor:unit(UNIT_PERCENT)
-            percentSensor:decimals(0)
-            percentSensor:appId(0x4402)
-            percentSensor:physId(0x11)
-            if debug then print(string.format("Remaining Sensor Created: 0x%04X 0x%02X", percentSensor:appId(), percentSensor:physId())) end
+            battsel.source.percent = model.createSensor()
+            battsel.source.percent:name("Remaining")
+            battsel.source.percent:unit(UNIT_PERCENT)
+            battsel.source.percent:decimals(0)
+            battsel.source.percent:appId(0x4402)
+            battsel.source.percent:physId(0x11)
+            if debug then print(string.format("Remaining Sensor Created: 0x%04X 0x%02X", battsel.source.percent:appId(), battsel.source.percent:physId())) end
         else
-            if debug then print(string.format("Remaining Sensor Found: 0x%04X 0x%02X", percentSensor:appId(), percentSensor:physId())) end
+            if debug then print(string.format("Remaining Sensor Found: 0x%04X 0x%02X", battsel.source.percent:appId(), battsel.source.percent:physId())) end
         end
     end
 
-    if percentSensor ~= nil then
+    if battsel.source.percent then
         if debug then print("Updating Remaining Sensor: " .. newPercent .. "%") end
-        percentSensor:value(newPercent)
+        battsel.source.percent:value(newPercent)
     else
         if debug then print("Unable to Find/Create Remaining Sensor") end
         return
@@ -428,85 +458,99 @@ local function updateRemainingSensor(widget)
 end
 
 
-local mAhSensor
-
+--- Retrieves the current milliampere-hour (mAh) reading from a telemetry sensor.
+--- 
+--- This function attempts to locate a telemetry sensor that provides mAh readings.
+--- It first tries to find the sensor using the `rfsuite.tasks.telemetry.getSensorSource` method.
+--- If unsuccessful, it falls back to a legacy search method that iterates through available telemetry sensors.
+--- 
+--- If a valid sensor is found, the function retrieves its current value, rounds it down to the nearest integer,
+--- and returns it. If no sensor is found or the value cannot be retrieved, the function returns 0.
+---
+--- Debugging messages can be enabled by setting `battsel.useDebug.getmAh` to `true`.
+---
+--- @return number The current mAh reading, rounded down to the nearest integer, or 0 if no sensor is found.
 local function getmAh()
-    if mAhSensor == nil then
-        for member = 0, 50 do
-            local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
-            if candidate then
-                if candidate:unit() == UNIT_MILLIAMPERE_HOUR then
-                    mAhSensor = candidate
-                    break -- Exit the loop once a valid mAh sensor is found
+    local debug = battsel.useDebug.getmAh
+
+    if not battsel.source.consumption then
+        battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        if battsel.source.consumption then
+            if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
+        else
+            if debug then print("DEBUG(getmAh): mAh Sensor not found from RFSUITE, proceeding with legacy search.") end
+            for member = 0, 50 do
+                local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
+                if candidate and candidate:unit() == UNIT_MILLIAMPERE_HOUR then
+                    battsel.source.consumption = candidate
+                    if debug then print("DEBUG(getmAh): mAh Sensor Found: " .. battsel.source.consumption:name()) end
+                    break
                 end
             end
         end
 
-        if mAhSensor == nil then
-            print("No mAh sensor found!")
+        if not battsel.source.consumption then
+            if debug then print("DEBUG(getmAh): Could not get mAh sensor!") end
             return 0
         end
     end
-    
-    -- Return the value or 0 if no valid sensor was found
-    if mAhSensor and mAhSensor:value() ~= nil then
-        if useDebug.getmAh then
-            print("Debug(getmAh): mAh Reading: " .. math.floor(mAhSensor:value()) .. "mAh")
-        end
-        return math.floor(mAhSensor:value())
-    else
-        return 0
+
+    local value = battsel.source.consumption:value()
+    if value then
+        if debug then print("DEBUG(getmAh): mAh Reading: " .. math.floor(value) .. "mAh") end
+        return math.floor(value)
     end
+
+    return 0
 end
 
 -- This function is called when the widget is first created
-local function create(widget)
-    read()
+local function create()
+
 end
 
 local lastmAh = 0
-local modelIDSensor
 local widgetInit = true
 local selectedBattery
 local matchingBatteries
 local fieldHeight
 local fieldWidth
 
-local function build(widget)
-    local debug = useDebug.build
+local function build()
+    local debug = battsel.useDebug.build
 
     local w, h = lcd.getWindowSize()
 
     -- Refresh the matchingBatteries list based on currentModelID
     matchingBatteries = {}
-    if #Batteries > 0 then
+    if #battsel.Data.Batteries > 0 then
         if currentModelID then
-            if debug then print("Debug(build): Current Model ID: " .. currentModelID) end
+            if debug then print("DEBUG(build): Current Model ID: " .. currentModelID) end
             -- First, try to add batteries matching currentModelID.
-            for i = 1, #Batteries do
-                if Batteries[i].modelID == currentModelID then
-                    matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
+            for i = 1, #battsel.Data.Batteries do
+                if battsel.Data.Batteries[i].modelID == currentModelID then
+                    matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
                 end
             end
             -- If no batteries matched, fall back to adding all batteries.
             if #matchingBatteries == 0 then
-                if debug then print("Debug(build): No batteries match currentModelID, falling back to all batteries.") end
-                for i = 1, #Batteries do
-                    matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
+                if debug then print("DEBUG(build): No batteries match currentModelID, falling back to all batteries.") end
+                for i = 1, #battsel.Data.Batteries do
+                    matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
                 end
             end
     
             -- Select a battery if a favorite is marked for the currentModelID.
-            for i = 1, #Batteries do
-                if Batteries[i].modelID == currentModelID and Batteries[i].favorite then
+            for i = 1, #battsel.Data.Batteries do
+                if battsel.Data.Batteries[i].modelID == currentModelID and battsel.Data.Batteries[i].favorite then
                     selectedBattery = i
                     break
                 end
             end
         else
             -- No currentModelID provided; simply add all batteries.
-            for i = 1, #Batteries do
-                matchingBatteries[#matchingBatteries + 1] = {Batteries[i].name, i}
+            for i = 1, #battsel.Data.Batteries do
+                matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
             end
             if #matchingBatteries > 0 then
                 selectedBattery = matchingBatteries[1][2]
@@ -523,10 +567,10 @@ local function build(widget)
         for i, battery in ipairs(matchingBatteries) do
             table.insert(batteryNames, battery[1])
         end
-        if batteryNames then print("Debug(build): Matching Batteries: " .. table.concat(batteryNames, ", ")) end
-        if Batteries[selectedBattery] then 
-            local batteryInfo = "Debug(build): Selected Battery: " .. Batteries[selectedBattery].name
-            if Batteries[selectedBattery].favorite then
+        if batteryNames then print("DEBUG(build): Matching Batteries: " .. table.concat(batteryNames, ", ")) end
+        if battsel.Data.Batteries[selectedBattery] then 
+            local batteryInfo = "Debug(build): Selected Battery: " .. battsel.Data.Batteries[selectedBattery].name
+            if battsel.Data.Batteries[selectedBattery].favorite then
             batteryInfo = batteryInfo .. " (Favorite)"
             end
             print(batteryInfo)
@@ -535,7 +579,7 @@ local function build(widget)
 
     -- Initialize widget based on radio type
     if widgetInit then
-        if debug then print("Debug(build): Widget Init") end
+        if debug then print("DEBUG(build): Widget Init") end
         
         if radio.board == "X18" or radio.board == "X18S" then
             fieldHeight = 30
@@ -550,19 +594,19 @@ local function build(widget)
             fieldWidth = 200
         end
 
-        if debug then print("Debug(build): Creating form") end
+        if debug then print("DEBUG(build): Creating form") end
         form.create()
         widgetInit = false
     end
     
     if fieldHeight and fieldWidth and matchingBatteries then
         form.clear()
-        if debug then print("Debug(build): Updating Choice Field") end
+        if debug then print("DEBUG(build): Updating Choice Field") end
         local pos_x = (w / 2 - fieldWidth / 2)
         local pos_y = (h / 2 - fieldHeight / 2)
 
         -- Create form and add choice field for selecting battery
-        local choiceField = form.addChoiceField(line, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
+        formFields["batteryChoiceField"] = form.addChoiceField(nil, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
             selectedBattery = value 
         end)
     end 
@@ -571,14 +615,22 @@ end
 local lastModelID = nil
 local lastTime = os.clock()
 local lastBattCheckTime = os.clock()
+local resetDone = false
+local batteryCapacity
 
-local function wakeup(widget)
-    local debug = useDebug.wakeup
+local function wakeup()
+    local debug = battsel.useDebug.wakeup
+
+    -- Assign telemetry active event to battsel.source.telem if not already
+    if battsel.source.telem == nil then
+        battsel.source.telem = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil})
+    end
+    local tlmActive = battsel.source.telem:state() -- Get the telemetry state
 
     -- Get the current uptime
     local currentTime = os.clock()
 
-    if checkBatteryVoltageOnConnect and tlmActive then
+    if battsel.Config.checkBatteryVoltageOnConnect and tlmActive then
         -- Only run the battery voltage check 15 seconds after telemetry becomes active to prevent reading voltage before Voltage telemetry is established and valid (nonzero)
         -- Initially this was 3 seconds, but some ESCs take longer to initialize and provide valid voltage telemetry (Scorpion takes over 10 seconds to start sending telemetry)
         if currentTime - lastBattCheckTime >= 15 then
@@ -586,7 +638,7 @@ local function wakeup(widget)
             -- If telemetry is active and voltage check is enabled, run check if it hasn't been done and dismissed yet
             if not doneVoltageCheck and not voltageDialogDismissed then
                 if debug then print ("Debug(wakeup): Running Battery Voltage Check") end
-                doBatteryVoltageCheck(widget)
+                doBatteryVoltageCheck(battsel)
             end
         end
     else
@@ -595,7 +647,6 @@ local function wakeup(widget)
     end
 
     if currentTime - lastTime >= 1 then
-        tlmActive = system.getSource({category = CATEGORY_SYSTEM_EVENT, member = TELEMETRY_ACTIVE, options = nil}):state()
         -- Reset all doBatteryVoltageCheck parameters when telemetry becomes inactive so that it can run again on next battery connect
         if not tlmActive and not resetDone then
             voltageDialogDismissed = false
@@ -608,9 +659,9 @@ local function wakeup(widget)
 
         -- if Batteries exist, telemetry is active, a battery is selected, and the mAh reading is not nil, do the maths
         local newmAh = getmAh()
-        if #Batteries > 0 and tlmActive and selectedBattery and newmAh ~= nil and useCapacity ~= nil then
+        if #battsel.Data.Batteries > 0 and tlmActive and selectedBattery and newmAh and battsel.Config.useCapacity  then
             if newmAh ~= lastmAh then
-                local usablemAh = Batteries[selectedBattery].capacity * (useCapacity / 100)
+                local usablemAh = battsel.Data.Batteries[selectedBattery].capacity * (battsel.Config.useCapacity / 100)
                 newPercent = 100 - (newmAh / usablemAh) * 100
                 if newPercent < 0 then newPercent = 0 end
                 lastmAh = newmAh
@@ -618,29 +669,29 @@ local function wakeup(widget)
         end
 
         if debug then print ("Debug(wakeup): Updating Remaining Sensor") end
-        updateRemainingSensor(widget) -- Update the remaining sensor
+        updateRemainingSensor() -- Update the remaining sensor
         
         -- Check for modelID sensor presence and its value
-        if not modelIDSensor then 
-            modelIDSensor = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
+        if not battsel.source.modelID then 
+            battsel.source.modelID = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
         end
-        if modelIDSensor and modelIDSensor:value() ~= nil then
-            currentModelID = math.floor(modelIDSensor:value())
+        if battsel.source.modelID and battsel.source.modelID:value() ~= nil then
+            currentModelID = math.floor(battsel.source.modelID:value())
         end
         
         local currentBitmapName = model.bitmap():match("([^/]+)$")
 
         -- Set the model image based on the currentModelID.  If not present or invalid, set it to the default image
-        if modelImageSwitching then
-            if tlmActive and currentModelID and Images[tostring(currentModelID)] then
-                if currentBitmapName ~= Images[tostring(currentModelID)] then
-                    model.bitmap(Images[tostring(currentModelID)])
-                    if debug then print("Debug(wakeup): Setting model image to " .. Images[tostring(currentModelID)]) end
+        if battsel.Config.modelImageSwitching then
+            if tlmActive and currentModelID and battsel.Config.Images[tostring(currentModelID)] then
+                if currentBitmapName ~= battsel.Config.Images[tostring(currentModelID)] then
+                    model.bitmap(battsel.Config.Images[tostring(currentModelID)])
+                    if debug then print("DEBUG(wakeup): Setting model image to " .. battsel.Config.Images[tostring(currentModelID)]) end
                 end
-            elseif Images and Images.Default and Images.Default ~= "" then
-                if currentBitmapName ~= Images.Default then
-                    model.bitmap(Images.Default)
-                    if debug then print("Debug(wakeup): Setting model image to Default: " .. Images.Default) end
+            elseif battsel.Config.Images and battsel.Config.Images.Default and battsel.Config.Images.Default ~= "" then
+                if currentBitmapName ~= battsel.Config.Images.Default then
+                    model.bitmap(battsel.Config.Images.Default)
+                    if debug then print("DEBUG(wakeup): Setting model image to Default: " .. battsel.Config.Images.Default) end
                 end
             end
         end
@@ -649,234 +700,206 @@ local function wakeup(widget)
 
     -- Check if the modelID has changed since last wakeup, and if so, set the rebuildWidgetflag to true
     if currentModelID ~= lastModelID then
-        if debug then print("Debug(wakeup): Model ID has changed") end
+        if debug then print("DEBUG(wakeup): Model ID has changed") end
         lastModelID = currentModelID 
         rebuildWidget = true
     end
 
     if rebuildWidget then
         if debug then print ("Debug(wakeup): Rebuilding widget") end
-        build(widget)
+        build()
         rebuildWidget = false
-    end
-
-    if rebuildImages then
-        if debug then print ("Debug(wakeup): Rebuilding Images Panel") end
-        imagePanel:clear()
-        fillImagePanel(imagePanel, widget)
-        rebuildImages = false
-    end
-
-    if rebuildPrefs then
-        if debug then print ("Debug(wakeup): Rebuilding Preferences Panel") end
-        prefsPanel:clear()
-        fillPrefsPanel(prefsPanel, widget)
-        rebuildPrefs = false
     end
 end
 
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
-local function configure(widget)
+local function configure()
+    local debug = battsel.useDebug.configure
+
     if not configLoaded then
         read()
-        configLoaded = true
     end
-    
-    local debug = useDebug.configure
+
     -- Fill Batteries panel
-    if debug then print("Debug(configure): Filling Battery Panel") end
+    if debug then print("DEBUG(configure): Filling Battery Panel") end
     batteryPanel = form.addExpansionPanel("Batteries")
     batteryPanel:open(false)
-    fillBatteryPanel(batteryPanel, widget)
+    fillBatteryPanel(batteryPanel, battsel)
 
     -- Fill Favorites panel
-    if debug then print("Debug(configure): Filling Favorites Panel") end
+    if debug then print("DEBUG(configure): Filling Favorites Panel") end
     favoritesPanel = form.addExpansionPanel("Favorites")
     favoritesPanel:open(false)
-    fillFavoritesPanel(favoritesPanel, widget)
+    fillFavoritesPanel(favoritesPanel, battsel)
 
     -- Fill Images panel
-    if debug then print("Debug(configure): Filling Images Panel") end
+    if debug then print("DEBUG(configure): Filling Images Panel") end
     imagePanel = form.addExpansionPanel("Images")
     imagePanel:open(false)
-    fillImagePanel(imagePanel, widget)
+    fillImagePanel(imagePanel, battsel)
 
     -- Preferences Panel
-    if debug then print("Debug(configure): Filling Preferences Panel") end
+    if debug then print("DEBUG(configure): Filling Preferences Panel") end
     prefsPanel = form.addExpansionPanel("Preferences")
     prefsPanel:open(false)
-    fillPrefsPanel(prefsPanel, widget)
+    fillPrefsPanel(prefsPanel, battsel)
 
-    -- Alerts Panel.  Commented out for now as not in use
-    -- local alertsPanel
-    -- alertsPanel = form.addExpansionPanel("Alerts")
-    -- alertsPanel:open(false)
-    -- fillAlertsPanel(alertsPanel, widget)
+    updateFieldStates()
 end
 
--- Helper function to read a file line by line
-local function readFileContent(filename)
-    local file = io.open(filename, "r")
-    if not file then
-        return nil
-    end
-    local content = ""
-    while true do
-        local line = file:read("*l")
-        if not line then break end
-        content = content .. line .. "\n"
-    end
-    file:close()
-    return content
-end
-read = function ()
-    configLoaded = false  -- Reset the configLoaded flag to false before reading
-    local debug = useDebug.read  
 
-    local configFileName = "config.json"
-    local batteriesFileName = "batteries.json"
+--- Reads configuration or battery data from files and merges it with default values.
+--- 
+--- This function handles reading and processing configuration and battery data
+--- from JSON files. It merges the read configuration with default values to ensure
+--- all required fields are present. The processed data is stored in the `battsel.Config`
+--- and `battsel.Data` tables.
+---
+--- @param what string|nil Specifies what data to read:
+---                        - "config": Reads configuration data from `config.json`.
+---                        - "data": Reads battery data from `batteries.json`.
+---                        - nil: Reads both configuration and battery data.
+function read(what)
+    local debug = battsel.useDebug.read
 
-    if debug then print("Debug(read): Starting read()") end
+    local defaultConfig = {
+        useCapacity = 80,
+        checkBatteryVoltageOnConnect = false,
+        minChargedCellVoltage = 415,
+        doHaptic = false,
+        modelImageSwitching = true,
+        Images = {
+            Default = "",
+        }
+    }
 
-    -- Read config.json
-    local configData = {}
-    local content = readFileContent(configFileName)
-    if content and content ~= "" then
-        configData = json.decode(content) or {}
-        if debug then print("Debug(read): Successfully decoded config data.") end
-    else
-        if debug then print("Debug(read): Config file not found or empty, using defaults.") end
-    end
-
-    -- Check versioning for config
-    if not configData.version then
-        if debug then print("Debug(read): No version detected in config.json, assuming version 1.") end
-        configData.version = 1  -- Assume version 1 for old formats
-    end
-
-    -- Set config variables with defaults
-    numBatts = configData.numBatts or 0
-    useCapacity = configData.useCapacity or 80
-    checkBatteryVoltageOnConnect = configData.checkBatteryVoltageOnConnect or false
-    minChargedCellVoltage = configData.minChargedCellVoltage or 415
-    doHaptic = configData.doHaptic or false
-    hapticPattern = configData.hapticPattern or 1
-    modelImageSwitching = configData.modelImageSwitching or false
-    Images = configData.Images or {}
-
-    if debug then
-        print("Debug(read): Config variables set:")
-        print("  numBatts = " .. tostring(numBatts))
-        print("  useCapacity = " .. tostring(useCapacity))
-        print("  checkBatteryVoltageOnConnect = " .. tostring(checkBatteryVoltageOnConnect))
-        print("  minChargedCellVoltage = " .. tostring(minChargedCellVoltage))
-        print("  doHaptic = " .. tostring(doHaptic))
-        print("  hapticPattern = " .. tostring(hapticPattern))
-        print("  modelImageSwitching = " .. tostring(modelImageSwitching))
-        print("  Images = " .. json.encode(Images, { indent = "  " }))
+    -- Local helper function to merge defaults into the config
+    local function mergeDefaults(defaults, config)
+        for key, defaultValue in pairs(defaults) do
+            if type(defaultValue) == "table" then
+                if type(config[key]) ~= "table" then
+                    config[key] = {}
+                end
+                mergeDefaults(defaultValue, config[key])
+            elseif config[key] == nil then
+                config[key] = defaultValue
+            end
+        end
     end
 
-    -- Read batteries.json
-    local content2 = readFileContent(batteriesFileName)
-    if content2 and content2 ~= "" then
-        local decoded = json.decode(content2)
-        if decoded then
-            if decoded.version and decoded.batteries then
-                -- New format
-                Batteries = decoded.batteries
-                if debug then print("Debug(read): Versioned battery format detected (v" .. decoded.version .. ")") end
-            elseif type(decoded) == "table" and #decoded > 0 and decoded[1].name then
-                -- Old format (plain array)
-                Batteries = decoded
-                if debug then print("Debug(read): Legacy battery format detected, assuming version 1.") end
+    local function readFileContent(filename)
+        local file = io.open(filename, "r")
+        if not file then return nil end
+        local content = {}
+        while true do
+            local line = file:read("*l")
+            if not line then break end
+            table.insert(content, line)
+        end
+        file:close()
+        return table.concat(content, "\n")
+    end
+
+    print("Reading BattSelector data from file...")
+    
+    if what == nil or what == "config" then
+        local configFileName = "config.json"
+        local content = readFileContent(configFileName)
+        local configData = {}
+        if content and content ~= "" then
+            configData = json.decode(content) or {}
+        end
+        -- Merge default config values into the read config
+        mergeDefaults(defaultConfig, configData)
+        battsel.Config = configData
+    end
+
+    if what == nil or what == "data" then
+        local batteriesFileName = "batteries.json"
+        local content2 = readFileContent(batteriesFileName)
+        local batteryData = {}
+        if content2 and content2 ~= "" then
+            local decoded = json.decode(content2)
+            if decoded then
+                if decoded.version and decoded.batteries then
+                    batteryData = decoded.batteries
+                elseif type(decoded) == "table" and #decoded > 0 and decoded[1].name then
+                    batteryData = decoded
+                else
+                    batteryData = {}
+                end
             else
-                if debug then print("Debug(read): Unknown structure in batteries.json, using empty.") end
-                Batteries = {}
+                batteryData = {}
             end
         else
-            if debug then print("Debug(read): Failed to decode batteries.json!") end
-            Batteries = {}
+            batteryData = {}
         end
-    else
-        Batteries = {}  -- File not found or empty
-        if debug then print("Debug(read): batteries.json not found or empty.") end
+        battsel.Data = { Batteries = batteryData }
+    end
+    if battsel.Config and battsel.Data then
+        configLoaded = true
     end
 
-    -- Debug battery output
-    if debug then
-        print("Debug(read): Batteries list:")
-        for i, battery in ipairs(Batteries) do
-            print(string.format("  Battery %d:", i))
-            print(string.format("    Name: %s", battery.name or "N/A"))
-            print(string.format("    Type: %s", battery.type or "N/A"))
-            print(string.format("    Cells: %d", battery.cells or 0))
-            print(string.format("    Capacity: %d mAh", battery.capacity or 0))
-            print(string.format("    Model ID: %s", tostring(battery.modelID or "N/A")))
-            print(string.format("    Favorite: %s", battery.favorite and "Yes" or "No"))
-        end
-    end
-
-    if debug then print("Debug(read): Finished read()") end
-end
-
-write = function ()
-    local debug = useDebug.write  
-    local configFileName = "config.json"
-    local batteriesFileName = "batteries.json"
-
-    -- Gather config data
-    local configData = {
-        version = 1,  -- Ensure future compatibility
-        numBatts = numBatts,
-        useCapacity = useCapacity,
-        checkBatteryVoltageOnConnect = checkBatteryVoltageOnConnect,
-        minChargedCellVoltage = minChargedCellVoltage,
-        doHaptic = doHaptic,
-        hapticPattern = hapticPattern,
-        modelImageSwitching = modelImageSwitching,
-        Images = Images
-    }
-
-    -- Gather battery data in a versioned structure
-    local batteryData = {
-        version = 1,  -- Ensure future compatibility
-        batteries = Batteries
-    }
-
-    -- Serialize tables
-    local jsonConfig = json.encode(configData, { indent = "  " })
-    local jsonBatteries = json.encode(batteryData, { indent = "  " })
-
-    -- Write config.json
-    local file = io.open(configFileName, "w")
-    if file then
-        file:write(jsonConfig)
-        file:close()
-        if debug then print("Debug(write): Config data written to " .. configFileName) end
-    else
-        if debug then print("Debug(write): Error: Unable to open " .. configFileName .. " for writing.") end
-    end
-
-    -- Write batteries.json
-    local file2 = io.open(batteriesFileName, "w")
-    if file2 then
-        file2:write(jsonBatteries)
-        file2:close()
-        if debug then print("Debug(write): Batteries data written to " .. batteriesFileName) end
-    else
-        if debug then print("Debug(write): Error: Unable to open " .. batteriesFileName .. " for writing.") end
+    if debug then 
+        if battsel.Config then utils.printTable(battsel.Config, "raw") end
+        if battsel.Data then utils.printTable(battsel.Data, "raw") end
     end
 end
 
-local function paint(widget) end
+--- Writes configuration or battery data to JSON files.
+--- 
+--- This function saves the current state of configuration and/or battery data
+--- to their respective JSON files. It supports writing either "config" data,
+--- "data" (battery data), or both if no specific type is specified.
+---
+--- @param what string|nil Optional. Specifies what data to write:
+---                        - "config": Writes configuration data to `config.json`.
+---                        - "data": Writes battery data to `batteries.json`.
+---                        - nil: Writes both configuration and battery data.
+function write(what)
+    local debug = battsel.useDebug.write
+
+    print("Writing BattSelector data to file...")
+    local configData = {}
+    local batteryData = {}
+
+    if what == nil or what == "config" then
+        local configFileName = "config.json"
+        -- Here we assume your global state holds the config in battsel.Config.
+        configData = battsel.Config or {}
+        local jsonConfig = json.encode(configData, { indent = "  " })
+        local file = io.open(configFileName, "w")
+        if file then
+            file:write(jsonConfig)
+            file:close()
+        end
+    end
+    if what == nil or what == "data" then
+        local batteriesFileName = "batteries.json"
+        -- Similarly, we assume battsel.Data.Batteries holds your battery list.
+        batteryData = { version = 1, batteries = (battsel.Data and battsel.Data.Batteries) or {} }
+        local jsonBatteries = json.encode(batteryData, { indent = "  " })
+        local file2 = io.open(batteriesFileName, "w")
+        if file2 then
+            file2:write(jsonBatteries)
+            file2:close()
+        end
+        
+    end
+
+    if debug then 
+        if configData then utils.printTable(configData, "pretty") end
+        if batteryData then utils.printTable(batteryData, "pretty") end
+    end
+end
+
+local function paint(battsel) end
 
 local function event(widget, category, value, x, y) end
 
 local function close()
-    Batteries = nil
-    matchingBatteries = nil
-    currentModelID = nil
+    battsel = nil
     system.exit()
     return true
 end
@@ -893,7 +916,6 @@ local function init()
         configure = configure,
         read = read,
         write = write,
-        runDebug = runDebug,
         close = close
     })
 end
