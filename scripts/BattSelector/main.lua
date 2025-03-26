@@ -303,12 +303,33 @@ local function fillPrefsPanel(prefsPanel)
     local line = prefsPanel:addLine("Enable Voltage Check")
     formFields["EnableVoltageCheck"] = form.addBooleanField(line, nil, function() return battsel.Config.checkBatteryVoltageOnConnect end, function(newValue) battsel.Config.checkBatteryVoltageOnConnect = newValue updateFieldStates() end)
     
-    local line = prefsPanel:addLine("Min Charged Volt/Cell")
-    formFields["VoltageCheckMinCellV"] = form.addNumberField(line, nil, 400, 435, function() return battsel.Config.minChargedCellVoltage or 415 end, function(value) battsel.Config.minChargedCellVoltage = value end)
-    formFields["VoltageCheckMinCellV"]:decimals(2)
-    formFields["VoltageCheckMinCellV"]:suffix("V")
-    formFields["VoltageCheckMinCellV"]:enableInstantChange(false)
-    formFields["VoltageCheckMinCellV"]:help("Minimum voltage per cell to consider battery charged.  Default is 4.15V")
+    local line = prefsPanel:addLine("Min Charged V/Cell (LiPo)")
+    formFields["VoltageCheckMinCellV_LiPo"] = form.addNumberField(
+        line,
+        nil,
+        400,
+        435,
+        function() return battsel.Config.minChargedCellVoltage.lv or 415 end,
+        function(value) battsel.Config.minChargedCellVoltage.lv = value end
+    )
+    formFields["VoltageCheckMinCellV_LiPo"]:decimals(2)
+    formFields["VoltageCheckMinCellV_LiPo"]:suffix("V")
+    formFields["VoltageCheckMinCellV_LiPo"]:enableInstantChange(false)
+    formFields["VoltageCheckMinCellV_LiPo"]:help("Minimum voltage per cell to consider LiPo battery charged.")
+
+    local line = prefsPanel:addLine("Min Charged V/Cell (LiHV)")
+    formFields["VoltageCheckMinCellV_LiHV"] = form.addNumberField(
+        line,
+        nil,
+        400,
+        435,
+        function() return battsel.Config.minChargedCellVoltage.hv or 430 end,
+        function(value) battsel.Config.minChargedCellVoltage.hv = value end
+    )
+    formFields["VoltageCheckMinCellV_LiHV"]:decimals(2)
+    formFields["VoltageCheckMinCellV_LiHV"]:suffix("V")
+    formFields["VoltageCheckMinCellV_LiHV"]:enableInstantChange(false)
+    formFields["VoltageCheckMinCellV_LiHV"]:help("Minimum voltage per cell to consider LiHV battery charged.")
 
     local line = prefsPanel:addLine("Haptic Warning")
     formFields["EnableVoltageCheckHaptic"] = form.addBooleanField(line, nil, function() return battsel.Config.doHaptic end, function(newValue) battsel.Config.doHaptic = newValue updateFieldStates() end)
@@ -324,13 +345,50 @@ end
 local voltageDialogDismissed = false
 local doneVoltageCheck = false
 local batteryConnectTime
+local selectedBattery
 
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck()
     local debug = battsel.useDebug.doBatteryVoltageCheck
+    if debug then print("DEBUG(doBatteryVoltageCheck): Starting battery voltage check.") end
+    
+    -- Retrieve battery data using the actual battery index.
+    local batteryData = nil
+    if battsel.Data and battsel.Data.Batteries and selectedBattery then
+        batteryData = battsel.Data.Batteries[selectedBattery]
+        if debug then
+            print("DEBUG(doBatteryVoltageCheck): Battery data found!")
+            if batteryData then
+                print("DEBUG(doBatteryVoltageCheck): Battery Data: Name=" .. tostring(batteryData.name) ..
+                      ", Type=" .. tostring(batteryData.type) .. ", Cells=" .. tostring(batteryData.cells))
+            end
+        end
+    else
+        if debug then print("DEBUG(doBatteryVoltageCheck): No battery data found or no selected battery.") end
+    end
 
-    -- Divide by 100 because the value is stored as a whole number (415 = 4.15V)
-    local minChargedCellVoltage = battsel.Config.minChargedCellVoltage / 100 or 4.15
+    utils.printTable(batteryData)
+    -- Determine the minimum per-cell voltage based on battery type.
+    -- The config values are stored as whole numbers (e.g. 415 for 4.15V), so we divide by 100.
+    local minPerCell = 4.15  -- default fallback
+    if batteryData then
+        if batteryData.type == 2 then
+            minPerCell = (battsel.Config.minChargedCellVoltage.hv or 435) / 100
+            if debug then
+                print("DEBUG(doBatteryVoltageCheck): Battery type is LiHV. Using minPerCell = " .. tostring(minPerCell) .. "V")
+            end
+        else
+            minPerCell = (battsel.Config.minChargedCellVoltage.lipo or 415) / 100
+            if debug then
+                print("DEBUG(doBatteryVoltageCheck): Battery type is LiPo. Using minPerCell = " .. tostring(minPerCell) .. "V")
+            end
+        end
+    else
+        minPerCell = (battsel.Config.minChargedCellVoltage.lipo or 415) / 100
+        if debug then
+            print("DEBUG(doBatteryVoltageCheck): No battery data available. Using default LiPo minPerCell = " .. tostring(minPerCell) .. "V")
+        end
+    end
 
     local cellCount
     local currentVoltage
@@ -341,57 +399,99 @@ local function doBatteryVoltageCheck()
     end
 
     if batteryConnectTime and (os.clock() - batteryConnectTime) <= 60 then
-        -- Check if cell count sensor exists in battsel.sensors, if not, get it
+        if debug then
+            print("DEBUG(doBatteryVoltageCheck): Battery connected within last 60 seconds. Proceeding with voltage check.")
+        end
+
+        -- Attempt to retrieve the cell count sensor
         if not battsel.source.cells then
             battsel.source.cells = system.getSource({category = CATEGORY_TELEMETRY, name = "Cell Count"})
             if battsel.source.cells then
-                if debug then print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor found. Continuing") end
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor found: " .. battsel.source.cells:name())
+                end
             else
-                if debug then print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor not found. Proceeding with estimation from Voltage") end
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor not found. Will attempt to estimate cell count from voltage.")
+                end
             end
         end
 
-        -- Check if voltage sensor exists in battsel.sensors, if not, get it
+        -- Attempt to retrieve the voltage sensor
         if not battsel.source.voltage then
-            -- Try to obtain the voltage sensor from RFSUITE first
             if rfsuite and rfsuite.tasks.active() then
+                if debug then print("DEBUG(doBatteryVoltageCheck): Attempting to get voltage sensor from RFSUITE.") end
                 battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
             end
             if battsel.source.voltage then
-                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor found from RFSUITE: " .. battsel.source.voltage:name()) end
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): Voltage sensor obtained from RFSUITE: " .. battsel.source.voltage:name())
+                end
             else
-                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor not found from RFSUITE, proceeding with legacy search.") end
-                -- Fallback to legacy method: search by name in the telemetry category
+                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor not found via RFSUITE. Trying legacy search.") end
                 battsel.source.voltage = system.getSource({category = CATEGORY_TELEMETRY, name = "Voltage"})
                 if battsel.source.voltage then
-                    if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor Found: " .. battsel.source.voltage:name()) end
+                    if debug then
+                        print("DEBUG(doBatteryVoltageCheck): Voltage sensor obtained via legacy search: " .. battsel.source.voltage:name())
+                    end
                 else
-                    if debug then print("DEBUG(doBatteryVoltageCheck): Could not get Voltage sensor!") end
+                    if debug then print("DEBUG(doBatteryVoltageCheck): Failed to obtain Voltage sensor. Exiting voltage check.") end
                     return
                 end
             end
         end
 
+        -- Process sensor values if both sensors are available
         if battsel.source.cells and battsel.source.voltage then
             if battsel.source.cells:value() == nil or battsel.source.voltage:value() == nil then
-                if debug then print("DEBUG(doBatteryVoltageCheck): Cell Count or Voltage sensor reading is nil. Exiting") end
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): One of the sensor readings is nil. Cell Count: " .. tostring(battsel.source.cells:value()) ..
+                          ", Voltage: " .. tostring(battsel.source.voltage:value()))
+                end
                 return
             end
             currentVoltage = battsel.source.voltage:value()
             cellCount = math.floor(battsel.source.cells:value())
-            isCharged = currentVoltage >= cellCount * minChargedCellVoltage
+            if debug then
+                print("DEBUG(doBatteryVoltageCheck): Sensor readings: Voltage = " .. tostring(currentVoltage) ..
+                      "V, Raw Cell Count = " .. tostring(battsel.source.cells:value()) ..
+                      " (floored to " .. tostring(cellCount) .. ")")
+            end
+
+            -- Override sensor cell count if batteryData provides a valid cell count
+            if batteryData and batteryData.cells and batteryData.cells > 0 then
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): Overriding sensor cell count with batteryData.cells = " .. tostring(batteryData.cells))
+                end
+                cellCount = batteryData.cells
+            end
+            isCharged = currentVoltage >= cellCount * minPerCell
             doneVoltageCheck = true
         elseif battsel.source.voltage then
             if battsel.source.voltage:value() == nil then
-                if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor reading is nil. Exiting") end
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): Voltage sensor reading is nil. Exiting.")
+                end
                 return
             end
             currentVoltage = battsel.source.voltage:value()
-            -- Estimate cell count based on voltage
-            cellCount = math.floor(currentVoltage / minChargedCellVoltage + 0.5)
-            -- To prevent accidentally reading a very low battery as a lower cell count than actual, add 1 to cellCount if the voltage is higher than cellCount * 4.35 (HV battery max cell voltage)
-            if currentVoltage >= cellCount * 4.35 then
+            cellCount = math.floor(currentVoltage / minPerCell + 0.5)
+            if debug then
+                print("DEBUG(doBatteryVoltageCheck): Estimated cell count from voltage = " .. tostring(cellCount) ..
+                      " using minPerCell = " .. tostring(minPerCell))
+            end
+            if currentVoltage >= cellCount * ((battsel.Config.minChargedCellVoltage.hv or 435) / 100) then
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): Voltage (" .. tostring(currentVoltage) .. "V) exceeds cellCount * HV threshold (" ..
+                          tostring(cellCount) .. " * " .. tostring((battsel.Config.minChargedCellVoltage.hv or 435) / 100) .. "V). Incrementing cell count.")
+                end
                 cellCount = cellCount + 1
+            end
+            if batteryData and batteryData.cells and batteryData.cells > 0 then
+                if debug then
+                    print("DEBUG(doBatteryVoltageCheck): Overriding estimated cell count with batteryData.cells = " .. tostring(batteryData.cells))
+                end
+                cellCount = batteryData.cells
             end
         end
 
@@ -400,7 +500,7 @@ local function doBatteryVoltageCheck()
         end
 
         if cellCount and currentVoltage then
-            isCharged = currentVoltage >= cellCount * minChargedCellVoltage
+            isCharged = currentVoltage >= cellCount * minPerCell
             if debug then
                 print("DEBUG(doBatteryVoltageCheck): Voltage Sensor Found. Reading: " .. currentVoltage .. "V")
                 print("DEBUG(doBatteryVoltageCheck): Cell Count: " .. cellCount)
@@ -408,7 +508,7 @@ local function doBatteryVoltageCheck()
             end
 
             if not isCharged and not voltageDialogDismissed then
-                if debug then print("Debug(doBatteryVoltageCheck): Battery not charged! Popup dialog") end
+                if debug then print("DEBUG(doBatteryVoltageCheck): Battery not charged! Triggering low voltage dialog.") end
                 local buttons = {
                     {label = "OK", action = function()
                         voltageDialogDismissed = true
@@ -417,7 +517,6 @@ local function doBatteryVoltageCheck()
                     end}
                 }
                 if battsel.Config.doHaptic then
-                    if debug then print("DEBUG(doBatteryVoltageCheck): Playing Haptic") end
                     system.playHaptic(hapticPatterns[battsel.Config.hapticPattern][1])
                 end
                 form.openDialog({
@@ -429,6 +528,11 @@ local function doBatteryVoltageCheck()
                 })
             end
             doneVoltageCheck = true
+            if debug then print("DEBUG(doBatteryVoltageCheck): Voltage check complete.") end
+        end
+    else
+        if debug then
+            print("DEBUG(doBatteryVoltageCheck): Battery connect time exceeded 60 seconds. Skipping voltage check.")
         end
     end
 end
@@ -520,36 +624,30 @@ end
 
 local lastmAh = 0
 local widgetInit = true
-local selectedBattery
 local matchingBatteries
 local fieldHeight
 local fieldWidth
 
 local function build()
     local debug = battsel.useDebug.build
-
     local w, h = lcd.getWindowSize()
 
-    -- Refresh the matchingBatteries list based on currentModelID
+    -- Build matchingBatteries as a list of battery indices
     matchingBatteries = {}
     if #battsel.Data.Batteries > 0 then
         if currentModelID then
-            if debug then print("DEBUG(build): Current Model ID: " .. currentModelID) end
-            -- First, try to add batteries matching currentModelID.
             for i = 1, #battsel.Data.Batteries do
                 if battsel.Data.Batteries[i].modelID == currentModelID then
-                    matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
+                    table.insert(matchingBatteries, i)
                 end
             end
-            -- If no batteries matched, fall back to adding all batteries.
             if #matchingBatteries == 0 then
-                if debug then print("DEBUG(build): No batteries match currentModelID, falling back to all batteries.") end
+                -- If none match currentModelID, use all batteries
                 for i = 1, #battsel.Data.Batteries do
-                    matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
+                    table.insert(matchingBatteries, i)
                 end
             end
-    
-            -- Select a battery if a favorite is marked for the currentModelID.
+            -- If a favorite exists for the currentModelID, use it
             for i = 1, #battsel.Data.Batteries do
                 if battsel.Data.Batteries[i].modelID == currentModelID and battsel.Data.Batteries[i].favorite then
                     selectedBattery = i
@@ -557,69 +655,72 @@ local function build()
                 end
             end
         else
-            -- No currentModelID provided; simply add all batteries.
             for i = 1, #battsel.Data.Batteries do
-                matchingBatteries[#matchingBatteries + 1] = {battsel.Data.Batteries[i].name, i}
+                table.insert(matchingBatteries, i)
             end
             if #matchingBatteries > 0 then
-                selectedBattery = matchingBatteries[1][2]
+                selectedBattery = matchingBatteries[1]
             end
         end
     end
-    
+
     if selectedBattery == nil then
         selectedBattery = 1
     end
 
     if debug then
         local batteryNames = {}
-        for i, battery in ipairs(matchingBatteries) do
-            table.insert(batteryNames, battery[1])
+        for _, batteryIndex in ipairs(matchingBatteries) do
+            table.insert(batteryNames, battsel.Data.Batteries[batteryIndex].name)
         end
         if batteryNames then print("DEBUG(build): Matching Batteries: " .. table.concat(batteryNames, ", ")) end
         if battsel.Data.Batteries[selectedBattery] then 
-            local batteryInfo = "Debug(build): Selected Battery: " .. battsel.Data.Batteries[selectedBattery].name
-            if battsel.Data.Batteries[selectedBattery].favorite then
-            batteryInfo = batteryInfo .. " (Favorite)"
-            end
-            print(batteryInfo)
+            print("DEBUG(build): Selected Battery: " .. battsel.Data.Batteries[selectedBattery].name)
         end
     end
 
-    -- Initialize widget based on radio type
+    -- Initialize widget dimensions
     if widgetInit then
-        if debug then print("DEBUG(build): Widget Init") end
-        
         if radio.board == "X18" or radio.board == "X18S" then
             fieldHeight = 30
         else
             fieldHeight = 40
         end
-
         local padding = 10
         fieldWidth, _ = lcd.getWindowSize()
-        fieldWidth = fieldWidth - padding * 2
-        if fieldWidth > 200 then
-            fieldWidth = 200
-        end
-
-        if debug then print("DEBUG(build): Creating form") end
+        fieldWidth = math.min(fieldWidth - padding * 2, 200)
         form.create()
         widgetInit = false
     end
-    
+
     if fieldHeight and fieldWidth and matchingBatteries then
         form.clear()
-        if debug then print("DEBUG(build): Updating Choice Field") end
         local pos_x = (w / 2 - fieldWidth / 2)
         local pos_y = (h / 2 - fieldHeight / 2)
+        local fieldSize = {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}
 
-        -- Create form and add choice field for selecting battery
-        formFields["batteryChoiceField"] = form.addChoiceField(nil, {x = pos_x, y = pos_y, w = fieldWidth, h = fieldHeight}, matchingBatteries, function() return selectedBattery end, function(value) 
-            selectedBattery = value 
-        end)
+        -- Create a display table from matchingBatteries (each entry is {batteryName, batteryIndex})
+        local displayChoices = {}
+        for _, batteryIndex in ipairs(matchingBatteries) do
+            table.insert(displayChoices, {battsel.Data.Batteries[batteryIndex].name, batteryIndex})
+        end
+
+        -- Create the choice field using the actual battery indices
+        formFields["batteryChoiceField"] = form.addChoiceField(
+            nil,
+            fieldSize,
+            displayChoices,
+            function() return selectedBattery end,
+            function(value)
+                selectedBattery = value
+                if debug then
+                    print("DEBUG(build): Battery chosen from picker; selectedBattery set to " .. tostring(selectedBattery))
+                end
+            end
+        )
     end 
 end
+
 
 local lastModelID = nil
 local lastTime = os.clock()
@@ -772,10 +873,11 @@ end
 function read(what)
     local debug = battsel.useDebug.read
 
+    -- In your read() function, update the default configuration:
     local defaultConfig = {
         useCapacity = 80,
         checkBatteryVoltageOnConnect = false,
-        minChargedCellVoltage = 415,
+        minChargedCellVoltage = { lv = 415, hv = 430 },
         doHaptic = false,
         hapticPattern = 1,
         modelImageSwitching = true,
