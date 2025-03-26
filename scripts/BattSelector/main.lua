@@ -355,7 +355,9 @@ local function doBatteryVoltageCheck()
         -- Check if voltage sensor exists in battsel.sensors, if not, get it
         if not battsel.source.voltage then
             -- Try to obtain the voltage sensor from RFSUITE first
-            battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
+            if rfsuite and rfsuite.tasks.active() then
+                battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
+            end
             if battsel.source.voltage then
                 if debug then print("DEBUG(doBatteryVoltageCheck): Voltage Sensor found from RFSUITE: " .. battsel.source.voltage:name()) end
             else
@@ -480,7 +482,9 @@ local function getmAh()
     local debug = battsel.useDebug.getmAh
 
     if not battsel.source.consumption then
-        battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        if rfsuite and rfsuite.tasks.active() then
+            battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        end
         if battsel.source.consumption then
             if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
         else
