@@ -287,7 +287,7 @@ local function fillBatteryPanel(batteryPanel)
     end)
 end
 
-local hapticPatterns = {{". . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . - - . - - .", 3}}
+local hapticPatterns = {{". . . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . ", 3}}
 
 -- Settings Panel
 local function fillPrefsPanel(prefsPanel)
