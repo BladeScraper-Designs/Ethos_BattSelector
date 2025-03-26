@@ -288,7 +288,6 @@ local function fillBatteryPanel(batteryPanel)
 end
 
 local hapticPatterns = {{". . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . - - . - - .", 3}}
-local hapticPattern
 
 -- Settings Panel
 local function fillPrefsPanel(prefsPanel)
@@ -408,7 +407,7 @@ local function doBatteryVoltageCheck()
                 print("DEBUG(doBatteryVoltageCheck): Battery Charged: " .. tostring(isCharged))
             end
 
-            if isCharged == false and voltageDialogDismissed == false then
+            if not isCharged and not voltageDialogDismissed then
                 if debug then print("Debug(doBatteryVoltageCheck): Battery not charged! Popup dialog") end
                 local buttons = {
                     {label = "OK", action = function()
@@ -419,7 +418,7 @@ local function doBatteryVoltageCheck()
                 }
                 if battsel.Config.doHaptic then
                     if debug then print("DEBUG(doBatteryVoltageCheck): Playing Haptic") end
-                    -- system.playHaptic(hapticPatterns[hapticPattern][1])
+                    system.playHaptic(hapticPatterns[battsel.Config.hapticPattern][1])
                 end
                 form.openDialog({
                     title = "Low Battery Voltage",
@@ -778,6 +777,7 @@ function read(what)
         checkBatteryVoltageOnConnect = false,
         minChargedCellVoltage = 415,
         doHaptic = false,
+        hapticPattern = 1,
         modelImageSwitching = true,
         Images = {
             Default = "",
