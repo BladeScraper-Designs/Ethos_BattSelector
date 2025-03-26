@@ -231,7 +231,13 @@ local function fillBatteryPanel(batteryPanel)
                 return true
             end)
             formFields["CloneButton"] = form.addTextButton(line, layout.field.batClone, "Clone", function()
-                battsel.Data.Batteries[#battsel.Data.Batteries] = {name = battsel.Data.Batteries[i].name .. " (Copy)", capacity = battsel.Data.Batteries[i].capacity, modelID = battsel.Data.Batteries[i].modelID}
+                local clone = {
+                    name = battsel.Data.Batteries[i].name .. " (Copy)",
+                    capacity = battsel.Data.Batteries[i].capacity,
+                    modelID = battsel.Data.Batteries[i].modelID,
+                    -- include any other necessary fields here
+                }
+                table.insert(battsel.Data.Batteries, clone)
                 batteryPanel:clear()
                 fillBatteryPanel(batteryPanel)
                 return true
