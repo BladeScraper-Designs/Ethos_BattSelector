@@ -62,7 +62,8 @@ local currentModelID = nil
 --- accordingly to ensure that only valid options are available to the user.
 local function updateFieldStates()
     local updates = {
-        {"VoltageCheckMinCellV", battsel.Config.checkBatteryVoltageOnConnect},
+        {"VoltageCheckMinCellV_LiPo", battsel.Config.checkBatteryVoltageOnConnect},
+        {"VoltageCheckMinCellV_LiHV", battsel.Config.checkBatteryVoltageOnConnect},
         {"EnableVoltageCheckHaptic", battsel.Config.checkBatteryVoltageOnConnect},
         {"VoltageCheckHapticPattern", battsel.Config.checkBatteryVoltageOnConnect and battsel.Config.doHaptic},
         {"ImagePickerDefault", battsel.Config.modelImageSwitching},
@@ -351,7 +352,7 @@ local selectedBattery
 local function doBatteryVoltageCheck()
     local debug = battsel.useDebug.doBatteryVoltageCheck
     if debug then print("DEBUG(doBatteryVoltageCheck): Starting battery voltage check.") end
-    
+
     -- Retrieve battery data using the actual battery index.
     local batteryData = nil
     if battsel.Data and battsel.Data.Batteries and selectedBattery then
