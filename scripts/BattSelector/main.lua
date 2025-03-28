@@ -21,9 +21,14 @@ battsel.useDebug = {
 }
 
 -- Required libraries
-local json = require("lib.dkjson") -- JSON library
+local json = require("lib.dkjson") -- JSON library 
+if json then print("DEBUG(battsel): JSON Library Loaded") else print("DEBUG(battsel): JSON Library Load Failed!") end
+
 local layouts = require("lib.layout") -- Layout library
+if layouts then print("DEBUG(battsel): Layouts Library Loaded") else print("DEBUG(battsel): Layouts Library Load Failed!") end
+
 local utils = require("lib.utils") -- Utility library
+if utils then print("DEBUG(battsel): Utils Library Loaded") else print("DEBUG(battsel): Utils Library Load Failed!") end
 
 local read, write
 
@@ -33,10 +38,9 @@ local LCD_W, LCD_H = radio.lcdWidth, radio.lcdHeight
 print("DEBUG(battsel): Radio: " .. radio.board)
 print("DEBUG(battsel): LCD Width: " .. LCD_W .. " Height: " .. LCD_H)
 
-local configLoaded = false  -- Flag to indicate if the configuration has been loaded yet
+local configLoaded = false
 
-local formLines = {}
-local formFields = {}
+local formLines, formFields = {}, {}
 
 local favoritesPanel
 local imagePanel
@@ -45,7 +49,7 @@ local prefsPanel
 
 local rebuildWidget = false
 
--- Putting these here to remind myself to implement them later
+-- Telemetry sources
 battsel.source = {
     telem = nil,
     voltage = nil,
@@ -70,12 +74,6 @@ local function updateFieldStates()
         {"ImagePickerId", battsel.Config.modelImageSwitching}
     }
 
-    -- Iterates over the `updates` table, where each element is expected to be a pair
-    -- containing a field name and a condition. For each pair:
-    -- 1. Retrieves the field name (`fieldName`) and condition (`condition`) from the current update.
-    -- 2. Checks if the `formFields` table contains an entry for the given `fieldName`.
-    -- 3. If the field exists, calls the `enable` method on the corresponding form field,
-    --    passing the `condition` as an argument to enable or disable the field dynamically.
     for _, update in ipairs(updates) do
         local fieldName, condition = update[1], update[2]
         if formFields[fieldName] then
@@ -135,14 +133,13 @@ local function fillImagePanel(imagePanel)
     local debug = battsel.useDebug.fillImagePanel
 
     local line = imagePanel:addLine("Enable Model Image Switching")
-    formFields["EnableImageSwitching"] = form.addBooleanField(line, nil, function() return battsel.Config.modelImageSwitching end, function(newValue) 
-        if debug then print("Model Image Switching: " .. tostring(newValue)) end
-        battsel.Config.modelImageSwitching = newValue
-        updateFieldStates()
-    end)
+    formFields["EnableImageSwitching"] = form.addBooleanField(line, nil, function() return battsel.Config.modelImageSwitching end, 
+        function(newValue) battsel.Config.modelImageSwitching = newValue updateFieldStates() end)
+    if debug then print("Model Image Switching: " .. tostring(newValue)) end 
     
     local line = imagePanel:addLine("Default Image")
-    formFields["ImagePickerDefault"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return battsel.Config.Images.Default or "" end, function(newValue) battsel.Config.Images.Default = newValue end)
+    formFields["ImagePickerDefault"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return battsel.Config.Images.Default or "" end, 
+        function(newValue) battsel.Config.Images.Default = newValue end)
     if debug then print("DEBUG(fillImagePanel):" .. "Default Image: " .. battsel.Config.Images.Default) end
 
     -- List out available Model IDs in the Favorites panel
@@ -150,11 +147,8 @@ local function fillImagePanel(imagePanel)
         local line = imagePanel:addLine("ID " .. id .. " Image")
         local key = tostring(id)  -- Convert to string
     
-        formFields["ImagePickerId"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function()
-            return battsel.Config.Images[key] or ""
-        end, function(newValue)
-            battsel.Config.Images[key] = newValue
-        end)
+        formFields["ImagePickerId"] = form.addFileField(line, nil, "/bitmaps/models", "image+ext", function() return battsel.Config.Images[key] or "" end, 
+            function(newValue) battsel.Config.Images[key] = newValue end)
         if debug then print("DEBUG(fillImagePanel): Image for ID " .. id .. ": " .. (battsel.Config.Images[key] or "")) end
     end
 end
@@ -305,28 +299,14 @@ local function fillPrefsPanel(prefsPanel)
     formFields["EnableVoltageCheck"] = form.addBooleanField(line, nil, function() return battsel.Config.checkBatteryVoltageOnConnect end, function(newValue) battsel.Config.checkBatteryVoltageOnConnect = newValue updateFieldStates() end)
     
     local line = prefsPanel:addLine("Min Charged V/Cell (LiPo)")
-    formFields["VoltageCheckMinCellV_LiPo"] = form.addNumberField(
-        line,
-        nil,
-        400,
-        435,
-        function() return battsel.Config.minChargedCellVoltage.lv or 415 end,
-        function(value) battsel.Config.minChargedCellVoltage.lv = value end
-    )
+    formFields["VoltageCheckMinCellV_LiPo"] = form.addNumberField(line, nil, 400, 435, function() return battsel.Config.minChargedCellVoltage.lv or 415 end, function(value) battsel.Config.minChargedCellVoltage.lv = value end)
     formFields["VoltageCheckMinCellV_LiPo"]:decimals(2)
     formFields["VoltageCheckMinCellV_LiPo"]:suffix("V")
     formFields["VoltageCheckMinCellV_LiPo"]:enableInstantChange(false)
     formFields["VoltageCheckMinCellV_LiPo"]:help("Minimum voltage per cell to consider LiPo battery charged.")
 
     local line = prefsPanel:addLine("Min Charged V/Cell (LiHV)")
-    formFields["VoltageCheckMinCellV_LiHV"] = form.addNumberField(
-        line,
-        nil,
-        400,
-        435,
-        function() return battsel.Config.minChargedCellVoltage.hv or 430 end,
-        function(value) battsel.Config.minChargedCellVoltage.hv = value end
-    )
+    formFields["VoltageCheckMinCellV_LiHV"] = form.addNumberField(line, nil, 400, 435, function() return battsel.Config.minChargedCellVoltage.hv or 430 end, function(value) battsel.Config.minChargedCellVoltage.hv = value end)
     formFields["VoltageCheckMinCellV_LiHV"]:decimals(2)
     formFields["VoltageCheckMinCellV_LiHV"]:suffix("V")
     formFields["VoltageCheckMinCellV_LiHV"]:enableInstantChange(false)
