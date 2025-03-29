@@ -320,23 +320,27 @@ local function fillPrefsPanel(prefsPanel)
     formFields["VoltageCheckHapticPattern"] = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
 end
 
+local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
+local freqMappingById = {
+    [1] = {10, 20, 30, 40, 50, 60, 70, 80, 90},
+    [2] = {50, 5, 0},
+    [3] = {}  -- For Custom, you might handle this differently later.
+}
+
 -- Alerts Panel, commented out for now as not in use
 local function fillAlertsPanel(alertsPanel)
-    local debug = battsel.useDebug.fillAlertsPanel or false
-    
-    -- Enable Alerts checkbox
     local line = alertsPanel:addLine("Enable Alerts")
     formFields["EnableAlertsField"] = form.addBooleanField(line, nil, 
         function() return battsel.Config.enableAlerts end, 
-        function(newValue) battsel.Config.enableAlerts = newValue updateFieldStates() end)
+        function(newValue) battsel.Config.enableAlerts = newValue end)
 
-    local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
-    
-    -- Alert Frequency choice field
     local line = alertsPanel:addLine("Alert Frequency")
-    formFields["AlertFrequencyField"] = form.addChoiceField(line, nil, alertFrequencies, 
-        function() return battsel.Config.alertFrequency or "Every 10%" end, 
-        function(newValue) battsel.Config.alertFrequency = newValue end)
+    formFields["AlertFrequencyField"] = form.addChoiceField(line, nil, alertFrequencies,
+        function() return battsel.Config.AlertsID or 1 end,
+        function(newValue)
+            battsel.Config.AlertsID = newValue
+            battsel.Config.Alerts = freqMappingById[newValue]
+        end)
 end
 
 local voltageDialogDismissed = false
@@ -565,28 +569,40 @@ local function updateRemainingSensor()
     end
 end
 
-local function doAlerts()
-    local debug = battsel.useDebug.doAlerts or true
 
-    if debug then print("DEBUG(doAlerts): Running alerts check.") end
+local voicePath = nil
+local lastAlertedThreshold = nil
+local lastZeroAlertTime = 0
 
+local function doAlert(threshold)
+    local debug = battsel.useDebug.doAlert or true
+    local now = os.clock()
+  
+    if threshold == 0 then
+      -- For 0%, only play if at least 10 seconds have passed
+      if now - lastZeroAlertTime < 10 then
+        if debug then print("DEBUG(doAlert): 0% alert skipped (cooldown not met)") end
+        return
+      end
+      lastZeroAlertTime = now
+    else
+      -- For other thresholds, only play if not already alerted
+      if lastAlertedThreshold == threshold then
+        if debug then print("DEBUG(doAlert): Alert for " .. threshold .. "% already played") end
+        return
+      end
+      lastAlertedThreshold = threshold
+    end
+  
+    if debug then print("DEBUG(doAlert): Playing alert for threshold: " .. threshold) end
+  
     if not voicePath then
-        local voicePath = system.getAudioVoice() or "en/us"
+      voicePath = system.getAudioVoice() or "AUDIO:/en/us"
     end
-
-    if battsel.Config.alertFrequency == 2 then
-        local alerts = {10, 5, 0}
-        
-        for _, freq in ipairs(alerts) do
-            print("DEBUG(doAlerts): Alert Frequency: " .. freq .. "%")
-            if newPercent == freq then
-                if debug then print("DEBUG(doAlerts): Alert triggered at " .. freq .. "%") end
-                system.playNumber(newPercent, UNIT_PERCENT, 0)
-                break
-            end
-        end
-    end
-end
+  
+    system.playFile(voicePath .. "/battery.wav")
+    system.playNumber(threshold, UNIT_PERCENT, 0)
+  end
 
 
 --- Retrieves the current milliampere-hour (mAh) reading from a telemetry sensor.
@@ -801,8 +817,17 @@ local function wakeup()
         if debug then print ("Debug(wakeup): Updating Remaining Sensor") end
         updateRemainingSensor() -- Update the remaining sensor
 
-        doAlerts() -- Run alerts check
-        
+        -- Alerts 
+        if battsel.Config.enableAlerts and battsel.Config.Alerts and newPercent then
+            local roundedPercent = math.floor(newPercent + 0.5)
+            for _, threshold in ipairs(battsel.Config.Alerts) do
+                if roundedPercent == threshold then
+                    doAlert(threshold)
+                    break
+                end
+            end
+        end
+
         -- Check for modelID sensor presence and its value
         if not battsel.source.modelID then 
             battsel.source.modelID = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
