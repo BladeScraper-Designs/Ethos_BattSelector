@@ -10,6 +10,7 @@ battsel.useDebug = {
     fillPrefsPanel = false,
     doBatteryVoltageCheck = false,
     updateRemainingSensor = false,
+    doAlert = true,
     getmAh = false,
     create = false,
     build = false,
@@ -628,15 +629,14 @@ local lastAlertedThreshold = nil
 local lastZeroAlertTime = 0
 
 local function doAlert(threshold)
-    local debug = battsel.useDebug.doAlert or true
+    local debug = battsel.useDebug.doAlert
     local now = os.clock()
     
-    -- Skip the alert if mute condition is met 
     if battsel.Config.AlertMute and battsel.Config.AlertMute.member then
         local muteSource = system.getSource({category = battsel.Config.AlertMute.category, member = battsel.Config.AlertMute.member})
         if muteSource then
             local muteValue = muteSource:value()
-            print("DEBUG(doAlert): Mute Source: " .. muteSource:name() .. ", Value: " .. tostring(muteValue))
+            if debug then print("DEBUG(doAlert): Mute Source: " .. muteSource:name() .. ", Value: " .. tostring(muteValue)) end
             if muteValue and muteValue > 0 then
                 if debug then print("DEBUG(doAlert): Mute condition active, skipping alert") end
                 return
