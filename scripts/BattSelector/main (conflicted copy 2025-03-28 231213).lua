@@ -74,8 +74,7 @@ local function updateFieldStates()
         {"ImagePickerDefault", battsel.Config.modelImageSwitching},
         {"ImagePickerId", battsel.Config.modelImageSwitching},
         {"AlertFrequency", battsel.Config.enableAlerts},
-        {"AlertMute", battsel.Config.enableAlerts},
-        {"AlertCustomThresholds", battsel.Config.AlertsID == 3}
+        {"AlertMute", battsel.Config.enableAlerts}
     }
 
     for _, update in ipairs(updates) do
@@ -339,35 +338,7 @@ local function fillAlertsPanel(alertsPanel)
     local line = alertsPanel:addLine("Alert Frequency")
     formFields["AlertFrequency"] = form.addChoiceField(line, nil, alertFrequencies,
         function() return battsel.Config.AlertsID or 1 end,
-        function(newValue) battsel.Config.AlertsID = newValue battsel.Config.Alerts = freqMappingById[newValue] updateFieldStates() end)
-
-        local function parseThresholds(str)
-            local thresholds = {}
-            -- This pattern splits the string on any whitespace or dash.
-            for token in string.gmatch(str, "([^%s%-]+)") do
-                local num = tonumber(token)
-                if num then
-                    table.insert(thresholds, num)
-                end
-            end
-            return thresholds
-        end        
-    
-        local line = alertsPanel:addLine("Alert Thresholds (Custom)")
-        formFields["AlertCustomThresholds"] = form.addTextField(line, nil,
-            function()
-                if battsel.Config.AlertsID == 3 and battsel.Config.Alerts and #battsel.Config.Alerts > 0 then
-                    return table.concat(battsel.Config.Alerts, " ")
-                else
-                    return ""
-                end
-            end,
-            function(newText)
-                if battsel.Config.AlertsID == 3 then
-                    battsel.Config.Alerts = parseThresholds(newText)
-                    print("Custom alerts updated to:", newText)
-                end
-            end)
+        function(newValue) battsel.Config.AlertsID = newValue battsel.Config.Alerts = freqMappingById[newValue] end)
 
     local line = alertsPanel:addLine("Alert Mute")
     formFields["AlertMute"] = form.addSwitchField(line, nil,
@@ -394,6 +365,32 @@ local function fillAlertsPanel(alertsPanel)
                 print("AlertMute cleared")
             end
         end)
+
+    local function parseThresholds(str)
+        local thresholds = {}
+        for token in string.gmatch(str, "([^,]+)") do
+            local num = tonumber(token)
+            if num then
+                table.insert(thresholds, num)
+            end
+        end
+        return thresholds
+    end
+
+    local line = alertsPanel:addLine("Alert Thresholds (Custom)")
+    formFields["AlertCustomThresholds"] = form.addTextField(line, nil,
+    function()
+        -- Convert the current Alerts table into a comma-separated string.
+        if battsel.Config.Alerts and #battsel.Config.Alerts > 0 then
+            return table.concat(battsel.Config.Alerts, ",")
+        else
+            return ""
+        end
+    end,
+    function(newText)
+        battsel.Config.Alerts = parseThresholds(newText)
+        print("Custom alerts updated to:", newText)
+    end)
 end
 
 
