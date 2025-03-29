@@ -324,12 +324,12 @@ end
 
 local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
 local freqMappingById = {
-    [1] = {10, 20, 30, 40, 50, 60, 70, 80, 90},
+    [1] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90},
     [2] = {50, 5, 0},
-    [3] = {}  -- For Custom, you might handle this differently later.
+    [3] = {}
 }
 
--- Alerts Panel, commented out for now as not in use
+-- Alerts Panel
 local function fillAlertsPanel(alertsPanel)
     local line = alertsPanel:addLine("Enable Alerts")
     formFields["EnableAlerts"] = form.addBooleanField(line, nil, 
@@ -343,7 +343,6 @@ local function fillAlertsPanel(alertsPanel)
 
         local function parseThresholds(str)
             local thresholds = {}
-            -- This pattern splits the string on any whitespace or dash.
             for token in string.gmatch(str, "([^%s%-]+)") do
                 local num = tonumber(token)
                 if num then
@@ -637,6 +636,7 @@ local function doAlert(threshold)
         local muteSource = system.getSource({category = battsel.Config.AlertMute.category, member = battsel.Config.AlertMute.member})
         if muteSource then
             local muteValue = muteSource:value()
+            print("DEBUG(doAlert): Mute Source: " .. muteSource:name() .. ", Value: " .. tostring(muteValue))
             if muteValue and muteValue > 0 then
                 if debug then print("DEBUG(doAlert): Mute condition active, skipping alert") end
                 return
