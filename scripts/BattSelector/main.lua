@@ -45,6 +45,7 @@ local formLines, formFields = {}, {}
 local favoritesPanel
 local imagePanel
 local batteryPanel
+local alertsPanel
 local prefsPanel
 
 local rebuildWidget = false
@@ -71,7 +72,8 @@ local function updateFieldStates()
         {"EnableVoltageCheckHaptic", battsel.Config.checkBatteryVoltageOnConnect},
         {"VoltageCheckHapticPattern", battsel.Config.checkBatteryVoltageOnConnect and battsel.Config.doHaptic},
         {"ImagePickerDefault", battsel.Config.modelImageSwitching},
-        {"ImagePickerId", battsel.Config.modelImageSwitching}
+        {"ImagePickerId", battsel.Config.modelImageSwitching},
+        {"AlertFrequencyField", battsel.Config.enableAlerts}
     }
 
     for _, update in ipairs(updates) do
@@ -319,9 +321,23 @@ local function fillPrefsPanel(prefsPanel)
 end
 
 -- Alerts Panel, commented out for now as not in use
--- local function fillAlertsPanel(alertsPanel, battsel)
---     local line = alertsPanel:addLine("Eventually")
--- end
+local function fillAlertsPanel(alertsPanel)
+    local debug = battsel.useDebug.fillAlertsPanel or false
+    
+    -- Enable Alerts checkbox
+    local line = alertsPanel:addLine("Enable Alerts")
+    formFields["EnableAlertsField"] = form.addBooleanField(line, nil, 
+        function() return battsel.Config.enableAlerts end, 
+        function(newValue) battsel.Config.enableAlerts = newValue updateFieldStates() end)
+
+    local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
+    
+    -- Alert Frequency choice field
+    local line = alertsPanel:addLine("Alert Frequency")
+    formFields["AlertFrequencyField"] = form.addChoiceField(line, nil, alertFrequencies, 
+        function() return battsel.Config.alertFrequency or "Every 10%" end, 
+        function(newValue) battsel.Config.alertFrequency = newValue end)
+end
 
 local voltageDialogDismissed = false
 local doneVoltageCheck = false
@@ -549,6 +565,29 @@ local function updateRemainingSensor()
     end
 end
 
+local function doAlerts()
+    local debug = battsel.useDebug.doAlerts or true
+
+    if debug then print("DEBUG(doAlerts): Running alerts check.") end
+
+    if not voicePath then
+        local voicePath = system.getAudioVoice() or "en/us"
+    end
+
+    if battsel.Config.alertFrequency == 2 then
+        local alerts = {10, 5, 0}
+        
+        for _, freq in ipairs(alerts) do
+            print("DEBUG(doAlerts): Alert Frequency: " .. freq .. "%")
+            if newPercent == freq then
+                if debug then print("DEBUG(doAlerts): Alert triggered at " .. freq .. "%") end
+                system.playNumber(newPercent, UNIT_PERCENT, 0)
+                break
+            end
+        end
+    end
+end
+
 
 --- Retrieves the current milliampere-hour (mAh) reading from a telemetry sensor.
 --- 
@@ -566,9 +605,9 @@ local function getmAh()
     local debug = battsel.useDebug.getmAh
 
     if not battsel.source.consumption then
-        if rfsuite and rfsuite.tasks.active() then
-            battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
-        end
+        -- if rfsuite and rfsuite.tasks.active() then
+            -- battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        -- end
         if battsel.source.consumption then
             if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
         else
@@ -761,6 +800,8 @@ local function wakeup()
 
         if debug then print ("Debug(wakeup): Updating Remaining Sensor") end
         updateRemainingSensor() -- Update the remaining sensor
+
+        doAlerts() -- Run alerts check
         
         -- Check for modelID sensor presence and its value
         if not battsel.source.modelID then 
@@ -829,6 +870,11 @@ local function configure()
     imagePanel = form.addExpansionPanel("Images")
     imagePanel:open(false)
     fillImagePanel(imagePanel, battsel)
+
+    if debug then print("DEBUG(configure): Filling Alerts Panel") end
+    alertsPanel = form.addExpansionPanel("Alerts")
+    alertsPanel:open(false)
+    fillAlertsPanel(alertsPanel, battsel)
 
     -- Preferences Panel
     if debug then print("DEBUG(configure): Filling Preferences Panel") end
