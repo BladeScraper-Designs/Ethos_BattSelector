@@ -76,7 +76,7 @@ local function updateFieldStates()
         {"ImagePickerId", battsel.Config.modelImageSwitching},
         {"AlertFrequency", battsel.Config.enableAlerts},
         {"AlertMute", battsel.Config.enableAlerts},
-        {"AlertCustomThresholds", battsel.Config.AlertsID == 3}
+        {"AlertCustomThresholds", battsel.Config.enableAlerts and battsel.Config.AlertsID == 3}
     }
 
     for _, update in ipairs(updates) do
@@ -335,7 +335,7 @@ local function fillAlertsPanel(alertsPanel)
     local line = alertsPanel:addLine("Enable Alerts")
     formFields["EnableAlerts"] = form.addBooleanField(line, nil, 
         function() return battsel.Config.enableAlerts end, 
-        function(newValue) battsel.Config.enableAlerts = newValue end)
+        function(newValue) battsel.Config.enableAlerts = newValue updateFieldStates() end)
 
     local line = alertsPanel:addLine("Alert Frequency")
     formFields["AlertFrequency"] = form.addChoiceField(line, nil, alertFrequencies,
