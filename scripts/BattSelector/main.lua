@@ -661,16 +661,15 @@ end
 --- If a valid sensor is found, the function retrieves its current value, rounds it down to the nearest integer,
 --- and returns it. If no sensor is found or the value cannot be retrieved, the function returns 0.
 ---
---- Debugging messages can be enabled by setting `battsel.useDebug.getmAh` to `true`.
----
 --- @return number The current mAh reading, rounded down to the nearest integer, or 0 if no sensor is found.
 local function getmAh()
     local debug = battsel.useDebug.getmAh
 
     if not battsel.source.consumption then
-        -- if rfsuite and rfsuite.tasks.active() then
-            -- battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
-        -- end
+        if rfsuite and rfsuite.tasks.active() and not radio.simulation then -- radio.simulation is used to prevent using rfsuite sensor on sim, so I can test alert callouts using a mAh sensor that actually changes
+            battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        end
+
         if battsel.source.consumption then
             if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
         else
@@ -700,7 +699,7 @@ local function getmAh()
     return 0
 end
 
--- This function is called when the widget is first created
+-- This function is called when the widget is first created, but is not currently used for anything
 local function create()
 
 end
