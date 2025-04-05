@@ -586,14 +586,14 @@ local function updateRemainingSensor()
 end
 
 
-local voicePath = nil
-local lastAlertedThreshold = nil
-local lastZeroAlertTime = 0
+local voicePath
+local lastAlertedThreshold 
+local lastZeroAlertTime = os.clock()
 
 local function doAlert(threshold)
     local debug = battsel.useDebug.doAlert
     local now = os.clock()
-  
+
     if threshold == 0 then
         -- For 0%, only play if at least 10 seconds have passed
         if now - lastZeroAlertTime < 10 then
@@ -611,11 +611,11 @@ local function doAlert(threshold)
     end
   
     if debug then print("DEBUG(doAlert): Playing alert for threshold: " .. threshold) end
-  
+    
     if not voicePath then
         voicePath = system.getAudioVoice() or "AUDIO:/en/us"
     end
-  
+
     system.playFile(voicePath .. "/battery.wav")
     system.playNumber(threshold, UNIT_PERCENT, 0)
 end
@@ -625,7 +625,7 @@ end
 --- 
 --- This function attempts to locate a telemetry sensor that provides mAh readings.
 --- It first tries to find the sensor using the `rfsuite.tasks.telemetry.getSensorSource` method.
---- If unsuccessful, it falls back to a legacy search method that iterates through available telemetry sensors.
+--- If unsuccessful, it falls back to legacy search methods.
 --- 
 --- If a valid sensor is found, the function retrieves its current value, rounds it down to the nearest integer,
 --- and returns it. If no sensor is found or the value cannot be retrieved, the function returns 0.
@@ -643,12 +643,19 @@ local function getmAh()
             if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
         else
             if debug then print("DEBUG(getmAh): mAh Sensor not found from RFSUITE, proceeding with legacy search.") end
-            for member = 0, 50 do
-                local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
-                if candidate and candidate:unit() == UNIT_MILLIAMPERE_HOUR then
-                    battsel.source.consumption = candidate
-                    if debug then print("DEBUG(getmAh): mAh Sensor Found: " .. battsel.source.consumption:name()) end
-                    break
+            battsel.source.consumption = system.getSource({ category = CATEGORY_TELEMETRY, name = "Consumption" })
+
+            if battsel.source.consumption then
+                if debug then print("DEBUG(getmAh): mAh Sensor found from name search: " .. battsel.source.consumption:name()) end
+            else
+                print("DEBUG(getmAh): mAh Sensor not found from name search, proceeding with full scan.")
+                for member = 0, 50 do
+                    local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
+                    if candidate and candidate:unit() == UNIT_MILLIAMPERE_HOUR then
+                        battsel.source.consumption = candidate
+                        if debug then print("DEBUG(getmAh): mAh Sensor Found from full scan: " .. battsel.source.consumption:name()) end
+                        break
+                    end
                 end
             end
         end
@@ -883,8 +890,11 @@ local function wakeup()
         -- ######### Alerts ######### --
         -- Check if alert mute source is already assigned, if not, assign it
         if battsel.source.mute == nil then
-            battsel.source.mute = system.getSource({category = battsel.Config.AlertMute.category, member = battsel.Config.AlertMute.member})
+            if battsel.Config.AlertMute then 
+                battsel.source.mute = system.getSource({category = battsel.Config.AlertMute.category, member = battsel.Config.AlertMute.member}) 
+            end
         end
+
         -- Set alertMute boolean if source exists and is valid
         local alertMute = battsel.source.mute and battsel.source.mute:state()
 
@@ -990,9 +1000,9 @@ function read(what)
         doHaptic = false,
         hapticPattern = 1,
         modelImageSwitching = true,
-        Images = {
-            Default = "",
-        }
+        Images = { Default = "" },
+        AlertsID = 1,
+        Alerts = { 50, 5, 0 }
     }
 
     -- Local helper function to merge defaults into the config
