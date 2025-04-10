@@ -10,14 +10,14 @@ battsel.useDebug = {
     fillPrefsPanel = false,
     doBatteryVoltageCheck = false,
     updateRemainingSensor = false,
-    doAlert = true,
+    doAlert = false,
     getmAh = false,
     create = false,
     build = false,
     read = false,
     write = false,
     paint = false,
-    wakeup = true,
+    wakeup = false,
     configure = false
 }
 
