@@ -522,6 +522,18 @@ local function doBatteryVoltageCheck()
         cellCount = 1
     end
 
+    -- Check if the voltage is below 3V. If so, exit the function.
+    -- Some units will return some voltage on the Voltage sensor when connected over USB.
+    -- In other cases, the battery voltage sensor may be from an ESC, and the voltage may be low until the ESC initilizes.
+    -- In either of these cases, the alert should be skipped.
+
+    -- With this added I have reduced the delay in running the voltage check from 15s to 5s, since this should skip the 
+    -- alert if the voltage sensor is low due to ESC not being initialized yet.
+    if currentVoltage and currentVoltage < 3 then
+        if debug then print("DEBUG(doBatteryVoltageCheck): Voltage is less than 3V. Exiting.") end
+        return
+    end
+
     if cellCount and currentVoltage then
         isCharged = currentVoltage >= cellCount * minPerCell
         if debug then
@@ -837,7 +849,7 @@ local function wakeup()
 
     if shouldRun(0.25) then -- This loop runs every 250ms
         if battsel.Config.checkBatteryVoltageOnConnect and tlmActive then
-            if shouldRunBatteryCheck(15, 60) then -- This will only run if it's been more than 15s but less than 60s since tlm became active
+            if shouldRunBatteryCheck(5, 60) then -- This will only run if it's been more than 15s but less than 60s since tlm became active
                 if not doneVoltageCheck and not voltageDialogDismissed then
                     if debug then print("Debug(wakeup): Running Battery Voltage Check") end
                     doBatteryVoltageCheck()
