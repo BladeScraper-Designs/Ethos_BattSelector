@@ -1,5 +1,5 @@
 -- Lua Battery Selector and Alarm widget
--- Version: 3.0.0
+-- Version: 3.1.0
 local battsel = {}
 
 -- Set to true to enable debug output for each function as required
@@ -38,6 +38,15 @@ local radio = system.getVersion()
 local LCD_W, LCD_H = radio.lcdWidth, radio.lcdHeight
 print("DEBUG(battsel): Radio: " .. radio.board)
 print("DEBUG(battsel): LCD Width: " .. LCD_W .. " Height: " .. LCD_H)
+print("DEBUG(battsel): Radio Version: " .. radio.version)
+
+-- Ethos compatibility check
+if not utils.checkCompat("ethos") then
+    print("DEBUG(battsel): Ethos Compatibility Check Failed!  Aborting...")
+    return
+else 
+    print("DEBUG(battsel): Ethos Compatibility Check Passed!")
+end
 
 local configLoaded = false
 
@@ -447,10 +456,13 @@ local function doBatteryVoltageCheck()
 
     -- Get voltage sensor (if not already cached)
     if not battsel.source.voltage then
-        if rfsuite and rfsuite.tasks.active() then
-            if debug then print("DEBUG(doBatteryVoltageCheck): Attempting to get voltage sensor from RFSUITE.") end
-            battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
+        if utils.checkCompat("rfsuite") then -- If installed RFSuite version is compatible with the getSensorSource method, use that
+            if rfsuite and rfsuite.tasks.active() then
+                if debug then print("DEBUG(doBatteryVoltageCheck): Attempting to get voltage sensor from RFSUITE.") end
+                battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
+            end
         end
+
         if not battsel.source.voltage then
             if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor not found via RFSUITE. Trying legacy search.") end
             battsel.source.voltage = system.getSource({ category = CATEGORY_TELEMETRY, name = "Voltage" })
@@ -647,8 +659,10 @@ local function getmAh()
     local debug = battsel.useDebug.getmAh
 
     if not battsel.source.consumption then
-        if rfsuite and rfsuite.tasks.active() and not radio.simulation then -- radio.simulation is used to prevent using rfsuite sensor on sim, so I can test alert callouts using a mAh sensor that actually changes
-            battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+        if utils.checkCompat("rfsuite") then -- If installed RFSuite version is compatible with the getSensorSource method, use that
+            if rfsuite and rfsuite.tasks.active() and not radio.simulation then -- radio.simulation is used to prevent using rfsuite sensor on sim, so I can test alert callouts using a mAh sensor that actually changes
+                battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
+            end
         end
 
         if battsel.source.consumption then
