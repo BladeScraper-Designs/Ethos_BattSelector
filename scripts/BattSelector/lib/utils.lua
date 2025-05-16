@@ -105,6 +105,65 @@ function M.checkCompat(member)
     end
 end
 
+function M.getSensor(name, unitFallback)
+    print("[getSensor] Looking for sensor with name: " .. tostring(name) .. ", unitFallback: " .. tostring(unitFallback))
+
+    if name == "Remaining" then
+        print("[getSensor] Special-case lookup for Remaining sensor via appId/physId")
+        local s = system.getSource({
+            category = CATEGORY_TELEMETRY,
+            appId    = 0x4402,
+            physId   = 0x11
+        })
+        if s then
+            print("[getSensor] Found Remaining via appId/physId: " .. tostring(s:name()))
+            return s
+        else
+            print("[getSensor] appId/physId lookup failed for Remaining")
+        end
+    end
+
+    -- Check if rfsuite version is compatible and if so, use its telemetry tools to get the sensor source
+    if M.checkCompat("rfsuite") and rfsuite and rfsuite.tasks.active() then
+        print("[getSensor] Using rfsuite telemetry tools to get sensor source.")
+        local s = rfsuite.tasks.telemetry.getSensorSource(name)
+        if s then
+            print("[getSensor] Found sensor via rfsuite: " .. tostring(s:name()))
+            return s
+        else
+            print("[getSensor] rfsuite did not find the sensor.")
+        end
+    else
+        print("[getSensor] rfsuite not available or not compatible.")
+    end
+
+    -- if above failed, try by name
+    print("[getSensor] Trying system.getSource by name.")
+    local s = system.getSource({ category = CATEGORY_TELEMETRY, name = name })
+    if s then
+        print("[getSensor] Found sensor via system.getSource: " .. tostring(s:name()))
+        return s
+    else
+        print("[getSensor] system.getSource did not find the sensor by name.")
+    end
+
+    -- full sensor scan if unitFallback provided.  It simply returns the first telemetry sensor that matches the unitFallback.
+    if unitFallback then
+        print("[getSensor] Scanning all telemetry sensors for unitFallback: " .. tostring(unitFallback))
+        for member = 0, 50 do
+            local c = system.getSource({ category = CATEGORY_TELEMETRY_SENSOR, member = member })
+            if c and c:unit() == unitFallback then
+                print("[getSensor] Found sensor by unitFallback: " .. tostring(c:name()))
+                return c
+            end
+        end
+        print("[getSensor] No sensor found with unitFallback: " .. tostring(unitFallback))
+    end
+
+    print("[getSensor] No sensor found. Returning nil.")
+    return nil
+end
+
 --- Merges two tables into one.
 -- @param t1 The first table.
 -- @param t2 The second table.

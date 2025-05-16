@@ -1,28 +1,47 @@
 -- Lua Battery Selector and Alarm widget
--- Version: 3.1.0
+-- Version: 3.2.0
 local battsel = {}
 
 -- Set to true to enable debug output for each function as required
 battsel.useDebug = {
+    -- UI Panel Fillers
+    fillBatteryPanel = false,
     fillFavoritesPanel = false,
     fillImagePanel = false,
-    fillBatteryPanel = false,
+    fillVoltAlertsPanel = false,
+    fillCapAlertsPanel = false,
     fillPrefsPanel = false,
-    doBatteryVoltageCheck = false,
-    updateRemainingSensor = false,
-    doAlert = false,
-    getmAh = false,
-    create = false,
-    build = false,
+    fillAlertsPanel = false,
+
+    -- UI/Field State
+    updateFieldStates = false,
+
+    -- Data IO
     read = false,
     write = false,
+
+    -- Battery/Telemetry Logic
+    doBatteryVoltageCheck = true,
+    getmAh = false,
+    updateRemainingSensor = false,
+    doCapAlert = false,
+
+    -- Widget Lifecycle
+    create = false,
+    build = false,
+    configure = false,
     paint = false,
-    wakeup = false,
-    configure = false
+    wakeup = true,
+    close = false,
+    init = false,
+
+    -- Utility/Scheduling
+    shouldRun = false,
+    shouldRunBatteryCheck = false
 }
 
 -- Required libraries
-local json = require("lib.dkjson") -- JSON library 
+local json = require("lib.lunajson") -- JSON library 
 if json then print("DEBUG(battsel): JSON Library Loaded") else print("DEBUG(battsel): JSON Library Load Failed!") end
 
 local layouts = require("lib.layout") -- Layout library
@@ -55,7 +74,8 @@ local formLines, formFields = {}, {}
 local favoritesPanel
 local imagePanel
 local batteryPanel
-local alertsPanel
+local capAlertsPanel
+local voltAlertsPanel
 local prefsPanel
 
 local rebuildWidget = false
@@ -73,21 +93,28 @@ battsel.source = {
 
 local currentModelID = nil
 local tlmActive = false
+local voicePath = system.getAudioVoice() or "AUDIO:/en/us"
 
---- Dynamically enables or disables specific form fields based on the current configuration.
---- This function evaluates the values in the `battsel.Config` table and adjusts the form fields
---- accordingly to ensure that only valid options are available to the user.
+-- Dynamically enables or disables specific form fields based on the current configuration.
+-- This function evaluates the values in the `battsel.Config` table and adjusts the related
+-- form fields accordingly to ensure that only valid options are available to the user.
 local function updateFieldStates()
     local updates = {
-        {"VoltageCheckMinCellV_LiPo", battsel.Config.checkBatteryVoltageOnConnect},
-        {"VoltageCheckMinCellV_LiHV", battsel.Config.checkBatteryVoltageOnConnect},
-        {"EnableVoltageCheckHaptic", battsel.Config.checkBatteryVoltageOnConnect},
-        {"VoltageCheckHapticPattern", battsel.Config.checkBatteryVoltageOnConnect and battsel.Config.doHaptic},
         {"ImagePickerDefault", battsel.Config.modelImageSwitching},
         {"ImagePickerId", battsel.Config.modelImageSwitching},
         {"AlertFrequency", battsel.Config.enableAlerts},
         {"AlertMute", battsel.Config.enableAlerts},
-        {"AlertCustomThresholds", battsel.Config.enableAlerts and battsel.Config.AlertsID == 3}
+        {"AlertCustomThresholds", battsel.Config.enableAlerts and battsel.Config.AlertsID == 3},
+        {"AlertLowCellVoltage", battsel.Config.enableVoltageAlerts},
+        {"AlertCriticalCellVoltage", battsel.Config.enableVoltageAlerts},
+        {"AlertFalsePositiveDelay", battsel.Config.enableVoltageAlerts},
+        {"VoltageCheckMinCellV_LiPo", battsel.Config.checkBatteryVoltageOnConnect},
+        {"VoltageCheckMinCellV_LiHV", battsel.Config.checkBatteryVoltageOnConnect},
+        {"EnableVoltageCheckHaptic", battsel.Config.checkBatteryVoltageOnConnect},
+        {"VoltageCheckHapticPattern", battsel.Config.checkBatteryVoltageOnConnect and battsel.Config.doHaptic},
+        {"VoltageCheckAudioFile", battsel.Config.checkBatteryVoltageOnConnect},
+        {"AlertLowVoltAudio", battsel.Config.enableVoltageAlerts},
+        {"AlertCriticalVoltAudio", battsel.Config.enableVoltageAlerts}
     }
 
     for _, update in ipairs(updates) do
@@ -298,8 +325,23 @@ local function fillBatteryPanel(batteryPanel)
     end)
 end
 
-local hapticPatterns = {{". . . . . . .", 1}, {". - . - . - .", 2}, {". - - . - - . ", 3}}
 
+local hapticPatterns = {
+  {"-", 1},
+  {"- -", 2},
+  {"- - -", 3},
+  {"- - - -", 4},
+  {".", 5},
+  {". .", 6},
+  {". . .", 7},
+  {". . . . .", 8},
+  {". -", 9},
+  {". . -", 10},
+  {". . . . . . .", 11},
+  {". - . - . - .", 12},
+  {". - - . - - .", 13}
+}
+  
 -- Settings Panel
 local function fillPrefsPanel(prefsPanel)
     local debug = battsel.useDebug.fillPrefsPanel
@@ -310,87 +352,8 @@ local function fillPrefsPanel(prefsPanel)
     formFields["UseCapacityField"]:suffix("%")
     formFields["UseCapacityField"]:default(80)
     formFields["UseCapacityField"]:help("Percentage of battery capacity to use for remaining percent calculations.  e.g. 80% means 4000mAh on a 5000mAh battery is 0% Remaining.")
-end
 
-
-local function fillVoltageCheckPanel(voltageCheckPanel)
-    local debug = battsel.useDebug.fillVoltageCheckPanel or true
-    if debug then print("DEBUG(fillVoltageCheckPanel): Filling Voltage Check Panel") end
-
-    local line = voltageCheckPanel:addLine("Enable Voltage Check")
-    formFields["EnableVoltageCheck"] = form.addBooleanField(line, nil, function() return battsel.Config.checkBatteryVoltageOnConnect end, function(newValue) battsel.Config.checkBatteryVoltageOnConnect = newValue updateFieldStates() end)
-    
-    local line = voltageCheckPanel:addLine("Min Charged V/Cell (LiPo)")
-    formFields["VoltageCheckMinCellV_LiPo"] = form.addNumberField(line, nil, 400, 420, function() return battsel.Config.minChargedCellVoltage.lv or 415 end, function(value) battsel.Config.minChargedCellVoltage.lv = value end)
-    formFields["VoltageCheckMinCellV_LiPo"]:decimals(2)
-    formFields["VoltageCheckMinCellV_LiPo"]:suffix("V")
-    formFields["VoltageCheckMinCellV_LiPo"]:enableInstantChange(false)
-    formFields["VoltageCheckMinCellV_LiPo"]:help("Minimum voltage per cell to consider LiPo battery charged.")
-
-    local line = voltageCheckPanel:addLine("Min Charged V/Cell (LiHV)")
-    formFields["VoltageCheckMinCellV_LiHV"] = form.addNumberField(line, nil, 400, 435, function() return battsel.Config.minChargedCellVoltage.hv or 430 end, function(value) battsel.Config.minChargedCellVoltage.hv = value end)
-    formFields["VoltageCheckMinCellV_LiHV"]:decimals(2)
-    formFields["VoltageCheckMinCellV_LiHV"]:suffix("V")
-    formFields["VoltageCheckMinCellV_LiHV"]:enableInstantChange(false)
-    formFields["VoltageCheckMinCellV_LiHV"]:help("Minimum voltage per cell to consider LiHV battery charged.")
-
-    local line = voltageCheckPanel:addLine("Haptic Warning")
-    formFields["EnableVoltageCheckHaptic"] = form.addBooleanField(line, nil, function() return battsel.Config.doHaptic end, function(newValue) battsel.Config.doHaptic = newValue updateFieldStates() end)
-    local line = voltageCheckPanel:addLine("Haptic Pattern")
-    formFields["VoltageCheckHapticPattern"] = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
-end
-
-
-
-local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
-local freqMappingById = {
-    [1] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90},
-    [2] = {50, 5, 0},
-    [3] = {}
-}
-
--- Alerts Panel
-local function fillAlertsPanel(alertsPanel)
-    local line = alertsPanel:addLine("Enable Capacity Alerts")
-    formFields["EnableAlerts"] = form.addBooleanField(line, nil, 
-        function() return battsel.Config.enableAlerts end, 
-        function(newValue) battsel.Config.enableAlerts = newValue updateFieldStates() end)
-
-    local line = alertsPanel:addLine("Alert Frequency")
-    formFields["AlertFrequency"] = form.addChoiceField(line, nil, alertFrequencies,
-        function() return battsel.Config.AlertsID or 1 end,
-        function(newValue) battsel.Config.AlertsID = newValue battsel.Config.Alerts = freqMappingById[newValue] updateFieldStates() end)
-
-    local function parseThresholds(str)
-        local thresholds = {}
-        for token in string.gmatch(str, "([^%s%-]+)") do
-            local num = tonumber(token)
-            if num then
-                table.insert(thresholds, num)
-            end
-        end
-        return thresholds
-    end        
-    
-    local line = alertsPanel:addLine("Alert Thresholds (Custom)")
-    formFields["AlertCustomThresholds"] = form.addTextField(line, nil,
-        function()
-            if battsel.Config.AlertsID == 3 and battsel.Config.Alerts and #battsel.Config.Alerts > 0 then
-                return table.concat(battsel.Config.Alerts, " ")
-            else
-                return ""
-            end
-        end,
-        function(newText)
-            if battsel.Config.AlertsID == 3 then
-                battsel.Config.Alerts = parseThresholds(newText)
-                print("Custom alerts updated to:", newText)
-            end
-        end)
-    -- formFields["AlertCustomThresholds"]:help("Enter space-separated values.  e.g. 50 40 30 20 10 0")
-        -- Apparently textFields don't support the help function?
-
-    local line = alertsPanel:addLine("Alert Mute")
+    local line = prefsPanel:addLine("Alert Mute")
     formFields["AlertMute"] = form.addSwitchField(line, nil,
         function()
             return battsel.Config.AlertMute 
@@ -408,10 +371,124 @@ local function fillAlertsPanel(alertsPanel)
         end)
 end
 
+
+local function fillVoltAlertsPanel(voltAlertsPanel)
+    local debug = battsel.useDebug.fillVoltAlertsPanel or true
+    if debug then print("DEBUG(fillVoltAlertsPanel): Filling Voltage Alerts Panel") end
+
+    local line = voltAlertsPanel:addLine("Enable Low Voltage Alerts")
+    formFields["EnableVoltageAlerts"] = form.addBooleanField(line, nil, function() return battsel.Config.enableVoltageAlerts end, function(newValue) battsel.Config.enableVoltageAlerts = newValue updateFieldStates() end)
+
+    local line = voltAlertsPanel:addLine("Low Cell Voltage")
+    formFields["AlertLowCellVoltage"] = form.addNumberField(line, nil, 0, 390, function() return battsel.Config.alertLowCellVoltage or 350 end, function(value) battsel.Config.alertLowCellVoltage = value end)
+    formFields["AlertLowCellVoltage"]:decimals(2)
+    formFields["AlertLowCellVoltage"]:suffix("V")
+    formFields["AlertLowCellVoltage"]:enableInstantChange(false)
+    formFields["AlertLowCellVoltage"]:help("Cell voltage at which the low alert is triggered.")
+
+    local line = voltAlertsPanel:addLine("Critical Cell Voltage")
+    formFields["AlertCriticalCellVoltage"] = form.addNumberField(line, nil, 0, 390, function() return battsel.Config.alertCriticalCellVoltage or 330 end, function(value) battsel.Config.alertCriticalCellVoltage = value end)
+    formFields["AlertCriticalCellVoltage"]:decimals(2)
+    formFields["AlertCriticalCellVoltage"]:suffix("V")
+    formFields["AlertCriticalCellVoltage"]:enableInstantChange(false)
+    formFields["AlertCriticalCellVoltage"]:help("Cell voltage at which the critical alert is triggered.")
+
+    local line = voltAlertsPanel:addLine("False Positive Delay")
+    formFields["AlertFalsePositiveDelay"] = form.addNumberField(line, nil, 0, 10, function() return battsel.Config.alertFalsePositiveDelay or 5 end, function(value) battsel.Config.alertFalsePositiveDelay = value end)
+    formFields["AlertFalsePositiveDelay"]:suffix("s")
+    formFields["AlertFalsePositiveDelay"]:enableInstantChange(false)
+    formFields["AlertFalsePositiveDelay"]:help("Time in seconds to wait before triggering the alert after the voltage drops below the threshold.  This helps prevent false positives from momentary voltage drops.")
+
+    local line = voltAlertsPanel:addLine("Low Voltage Alert Audio")
+    formFields["AlertLowVoltAudio"] = form.addFileField(line, nil, voicePath .. "/", "audio", function() return battsel.Config.alertLowVoltAudio end, function(newValue) battsel.Config.alertLowVoltAudio = newValue end)
+
+    local line = voltAlertsPanel:addLine("Critical Voltage Alert Audio")
+    formFields["AlertCriticalVoltAudio"] = form.addFileField(line, nil, voicePath .. "/", "audio", function() return battsel.Config.alertCriticalVoltAudio end, function(newValue) battsel.Config.alertCriticalVoltAudio = newValue end)
+
+    -- Blank Line to separate voltage alert and voltage check settings
+    local line = voltAlertsPanel:addLine("")
+    --
+
+    local line = voltAlertsPanel:addLine("Enable Charged Battery Check")
+    formFields["EnableVoltageCheck"] = form.addBooleanField(line, nil, function() return battsel.Config.checkBatteryVoltageOnConnect end, function(newValue) battsel.Config.checkBatteryVoltageOnConnect = newValue updateFieldStates() end)
+    
+    local line = voltAlertsPanel:addLine("Min Charged V/Cell (LiPo)")
+    formFields["VoltageCheckMinCellV_LiPo"] = form.addNumberField(line, nil, 350, 420, function() return battsel.Config.minChargedCellVoltage.lv or 415 end, function(value) battsel.Config.minChargedCellVoltage.lv = value end)
+    formFields["VoltageCheckMinCellV_LiPo"]:decimals(2)
+    formFields["VoltageCheckMinCellV_LiPo"]:suffix("V")
+    formFields["VoltageCheckMinCellV_LiPo"]:enableInstantChange(false)
+    formFields["VoltageCheckMinCellV_LiPo"]:help("Minimum voltage per cell to consider LiPo battery charged.")
+
+    local line = voltAlertsPanel:addLine("Min Charged V/Cell (LiHV)")
+    formFields["VoltageCheckMinCellV_LiHV"] = form.addNumberField(line, nil, 350, 435, function() return battsel.Config.minChargedCellVoltage.hv or 430 end, function(value) battsel.Config.minChargedCellVoltage.hv = value end)
+    formFields["VoltageCheckMinCellV_LiHV"]:decimals(2)
+    formFields["VoltageCheckMinCellV_LiHV"]:suffix("V")
+    formFields["VoltageCheckMinCellV_LiHV"]:enableInstantChange(false)
+    formFields["VoltageCheckMinCellV_LiHV"]:help("Minimum voltage per cell to consider LiHV battery charged.")
+
+    local line = voltAlertsPanel:addLine("Haptic Warning")
+    formFields["EnableVoltageCheckHaptic"] = form.addBooleanField(line, nil, function() return battsel.Config.doHaptic end, function(newValue) battsel.Config.doHaptic = newValue updateFieldStates() end)
+    local line = voltAlertsPanel:addLine("Haptic Pattern")
+    formFields["VoltageCheckHapticPattern"] = form.addChoiceField(line, nil, hapticPatterns, function() return hapticPattern or 1 end, function(newValue) hapticPattern = newValue end)
+
+    local line = voltAlertsPanel:addLine("Uncharged Battery Alert Audio")
+    formFields["VoltageCheckAudioFile"] = form.addFileField(line, nil, voicePath .. "/", "audio", function() return battsel.Config.batteryCheckAudioFile end, function(newValue) battsel.Config.batteryCheckAudioFile = newValue end)
+end
+
+
+
+local alertFrequencies = {{"Every 10%", 1}, {"50%, 5%, 0%", 2}, {"Custom", 3}}
+local freqMappingById = {
+    [1] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90},
+    [2] = {50, 5, 0},
+    [3] = {}
+}
+
+-- Alerts Panel
+local function fillCapAlertsPanel(capAlertsPanel)
+    local line = capAlertsPanel:addLine("Enable Capacity Alerts")
+    formFields["EnableAlerts"] = form.addBooleanField(line, nil, 
+        function() return battsel.Config.enableAlerts end, 
+        function(newValue) battsel.Config.enableAlerts = newValue updateFieldStates() end)
+
+    local line = capAlertsPanel:addLine("Alert Frequency")
+    formFields["AlertFrequency"] = form.addChoiceField(line, nil, alertFrequencies,
+        function() return battsel.Config.AlertsID or 1 end,
+        function(newValue) battsel.Config.AlertsID = newValue battsel.Config.Alerts = freqMappingById[newValue] updateFieldStates() end)
+
+    local function parseThresholds(str)
+        local thresholds = {}
+        for token in string.gmatch(str, "([^%s%-]+)") do
+            local num = tonumber(token)
+            if num then
+                table.insert(thresholds, num)
+            end
+        end
+        return thresholds
+    end        
+    
+    local line = capAlertsPanel:addLine("Alert Thresholds (Custom)")
+    formFields["AlertCustomThresholds"] = form.addTextField(line, nil,
+        function()
+            if battsel.Config.AlertsID == 3 and battsel.Config.Alerts and #battsel.Config.Alerts > 0 then
+                return table.concat(battsel.Config.Alerts, " ")
+            else
+                return ""
+            end
+        end,
+        function(newText)
+            if battsel.Config.AlertsID == 3 then
+                battsel.Config.Alerts = parseThresholds(newText)
+                print("Custom alerts updated to:", newText)
+            end
+        end)
+end
+
 local voltageDialogDismissed = false
 local doneVoltageCheck = false
 local batteryConnectTime
 local selectedBattery
+local cellCount
 
 -- Estimate cellcount and check if battery is charged.  If not, popup dialog to alert user
 local function doBatteryVoltageCheck()
@@ -429,6 +506,8 @@ local function doBatteryVoltageCheck()
         end
     end
 
+    local currentVoltage, isCharged
+
     -- Determine the minimum per-cell voltage based on battery type.
     local minPerCell = 4.15  -- default fallback
     if batteryData then
@@ -444,46 +523,19 @@ local function doBatteryVoltageCheck()
         if debug then print("DEBUG(doBatteryVoltageCheck): No battery data available. Using default LiPo minPerCell = " .. minPerCell .. "V") end
     end
 
-    local cellCount, currentVoltage, isCharged
-
     -- Get cell count sensor (if not already cached)
-    if not battsel.source.cells then
-        battsel.source.cells = system.getSource({ category = CATEGORY_TELEMETRY, name = "Cell Count" })
-        if battsel.source.cells and debug then
-            print("DEBUG(doBatteryVoltageCheck): RF Cell Count sensor found: " .. battsel.source.cells:name())
-        end
-    end
+    battsel.source.cells = battsel.source.cells or utils.getSensor("Cell Count", nil)
+    print("DEBUG(doBatteryVoltageCheck): Cell Count Sensor: " .. (battsel.source.cells and battsel.source.cells:name() or "Not Found"))
 
     -- Get voltage sensor (if not already cached)
-    if not battsel.source.voltage then
-        if utils.checkCompat("rfsuite") then -- If installed RFSuite version is compatible with the getSensorSource method, use that
-            if rfsuite and rfsuite.tasks.active() then
-                if debug then print("DEBUG(doBatteryVoltageCheck): Attempting to get voltage sensor from RFSUITE.") end
-                battsel.source.voltage = rfsuite.tasks.telemetry.getSensorSource("voltage")
-            end
-        end
-
-        if not battsel.source.voltage then
-            if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor not found via RFSUITE. Trying legacy search.") end
-            battsel.source.voltage = system.getSource({ category = CATEGORY_TELEMETRY, name = "Voltage" })
-            if battsel.source.voltage and debug then
-                print("DEBUG(doBatteryVoltageCheck): Voltage sensor obtained via legacy search: " .. battsel.source.voltage:name())
-            end
-        else
-            if debug then print("DEBUG(doBatteryVoltageCheck): Voltage sensor obtained from RFSUITE: " .. battsel.source.voltage:name()) end
-        end
-        if not battsel.source.voltage then
-            if debug then print("DEBUG(doBatteryVoltageCheck): Failed to obtain Voltage sensor. Exiting voltage check.") end
-            return
-        end
-    end
+    battsel.source.voltage = battsel.source.voltage or utils.getSensor("Voltage", nil)
 
     -- Process sensor values if both sensors are available.
     if battsel.source.cells and battsel.source.voltage then
         if battsel.source.cells:value() == nil or battsel.source.voltage:value() == nil then
             if debug then
                 print("DEBUG(doBatteryVoltageCheck): One sensor reading is nil. Cell Count: " 
-                      .. tostring(battsel.source.cells:value()) .. ", Voltage: " 
+                      .. tostring(battsel.source.cells:value()) .. ", Voltage: "    
                       .. tostring(battsel.source.voltage:value()))
             end
             return
@@ -555,7 +607,12 @@ local function doBatteryVoltageCheck()
         end
 
         if not isCharged and not voltageDialogDismissed then
-            if debug then print("DEBUG(doBatteryVoltageCheck): Battery not charged! Triggering low voltage dialog.") end
+            if debug then print("DEBUG(doBatteryVoltageCheck): Battery not charged.") end
+
+            if debug then print("DEBUG(doBatteryVoltageCheck): Playing audio..."  ) end
+            system.playFile(voicePath .. "/" .. battsel.Config.batteryCheckAudioFile .. ".wav" or voicePath .. "/battery.wav")
+
+            if debug then print("DEBUG(doBatteryVoltageCheck): Opening low voltage dialog.") end
             local buttons = {
                 { label = "OK", action = function()
                     voltageDialogDismissed = true
@@ -563,9 +620,11 @@ local function doBatteryVoltageCheck()
                     return true
                 end }
             }
+
             if battsel.Config.doHaptic then
                 system.playHaptic(hapticPatterns[battsel.Config.hapticPattern][1])
             end
+
             form.openDialog({
                 title = "Low Battery Voltage",
                 message = "Battery may not be charged!",
@@ -585,7 +644,7 @@ local function updateRemainingSensor()
     local debug = battsel.useDebug.updateRemainingSensor
     if not battsel.source.percent then
         if debug then print("Searching for Remaining Sensor") end
-        battsel.source.percent = system.getSource({category = CATEGORY_TELEMETRY, appId = 0x4402, physId = 0x11, name = "Remaining"})
+        battsel.source.percent = utils.getSensor("Remaining", UNIT_PERCENT)
         if not battsel.source.percent then
             print("Remaining Sensor Not Found. Creating...")
             battsel.source.percent = model.createSensor()
@@ -604,100 +663,82 @@ local function updateRemainingSensor()
         if debug then print("Updating Remaining Sensor: " .. newPercent .. "%") end
         battsel.source.percent:value(newPercent)
     else
-        if debug then print("Unable to Find/Create Remaining Sensor") end
+        if debug then print("Unable to Find or Create Remaining Sensor") end
         return
     end
 end
 
 
-local voicePath
 local lastAlertedThreshold 
 local lastZeroAlertTime = os.clock()
 
-local function doAlert(threshold)
-    local debug = battsel.useDebug.doAlert
+-- Capacity Alerts
+local function doCapAlert(threshold)
+    local debug = battsel.useDebug.doCapAlert
     local now = os.clock()
 
     if threshold == 0 then
         -- For 0%, only play if at least 10 seconds have passed
         if now - lastZeroAlertTime < 10 then
-            if debug then print("DEBUG(doAlert): 0% alert skipped (cooldown not met)") end
+            if debug then print("DEBUG(doCapAlert): 0% alert skipped (cooldown not met)") end
             return
         end
         lastZeroAlertTime = now
     else
         -- For other thresholds, only play if not already alerted
         if lastAlertedThreshold == threshold then
-            if debug then print("DEBUG(doAlert): Alert for " .. threshold .. "% already played") end
+            if debug then print("DEBUG(doCapAlert): Alert for " .. threshold .. "% already played") end
             return
         end
         lastAlertedThreshold = threshold
     end
   
-    if debug then print("DEBUG(doAlert): Playing alert for threshold: " .. threshold) end
-    
-    if not voicePath then
-        voicePath = system.getAudioVoice() or "AUDIO:/en/us"
-    end
+    if debug then print("DEBUG(doCapAlert): Playing alert for threshold: " .. threshold) end
 
     system.playFile(voicePath .. "/battery.wav")
     system.playNumber(threshold, UNIT_PERCENT, 0)
 end
 
+local lastVoltAlertTime = os.clock()
 
---- Retrieves the current milliampere-hour (mAh) reading from a telemetry sensor.
---- 
---- This function attempts to locate a telemetry sensor that provides mAh readings.
---- It first tries to find the sensor using the `rfsuite.tasks.telemetry.getSensorSource` method.
---- If unsuccessful, it falls back to legacy search methods.
---- 
---- If a valid sensor is found, the function retrieves its current value, rounds it down to the nearest integer,
---- and returns it. If no sensor is found or the value cannot be retrieved, the function returns 0.
----
---- @return number The current mAh reading, rounded down to the nearest integer, or 0 if no sensor is found.
+local function doVoltAlert(threshold, type)
+    local debug = battsel.useDebug.doVoltAler
+    local type = type or "low"
+
+    local now = os.clock()
+    if now - lastVoltAlertTime < 5 then
+        if debug then print("DEBUG(doVoltAlert): Alert skipped (cooldown not met)") end
+        return
+    end
+    lastVoltAlertTime = now
+
+    if debug then print("DEBUG(doVoltAlert): Playing alert for threshold: " .. threshold) end
+
+    if type == "low" then
+        system.playFile(voicePath .. "/" .. battsel.Config.alertLowVoltAudio .. ".wav" or voicePath .. "/battery.wav")
+    elseif type == "critical" then
+        system.playFile(voicePath .. "/" .. battsel.Config.alertCriticalVoltAudio .. ".wav" or voicePath .. "/battery.wav")
+    end
+end
+
+
+--- Retrieves the current battery consumption in milliampere-hours (mAh).
+-- This function attempts to obtain the "Consumption" sensor value, caches it,
+-- and returns the value rounded down to the nearest integer.
+-- If the sensor or value is unavailable, it returns 0.
+-- @return number The current battery consumption in mAh, or 0 if unavailable.
 local function getmAh()
     local debug = battsel.useDebug.getmAh
 
-    if not battsel.source.consumption then
-        if utils.checkCompat("rfsuite") then -- If installed RFSuite version is compatible with the getSensorSource method, use that
-            if rfsuite and rfsuite.tasks.active() and not radio.simulation then -- radio.simulation is used to prevent using rfsuite sensor on sim, so I can test alert callouts using a mAh sensor that actually changes
-                battsel.source.consumption = rfsuite.tasks.telemetry.getSensorSource("consumption")
-            end
-        end
+    battsel.source.consumption = battsel.source.consumption or utils.getSensor("Consumption", UNIT_MILLIAMPERE_HOUR)
 
-        if battsel.source.consumption then
-            if debug then print("DEBUG(getmAh): mAh Sensor found from RFSUITE: " .. battsel.source.consumption:name()) end
-        else
-            if debug then print("DEBUG(getmAh): mAh Sensor not found from RFSUITE, proceeding with legacy search.") end
-            battsel.source.consumption = system.getSource({ category = CATEGORY_TELEMETRY, name = "Consumption" })
-
-            if battsel.source.consumption then
-                if debug then print("DEBUG(getmAh): mAh Sensor found from name search: " .. battsel.source.consumption:name()) end
-            else
-                print("DEBUG(getmAh): mAh Sensor not found from name search, proceeding with full scan.")
-                for member = 0, 50 do
-                    local candidate = system.getSource({category = CATEGORY_TELEMETRY_SENSOR, member = member})
-                    if candidate and candidate:unit() == UNIT_MILLIAMPERE_HOUR then
-                        battsel.source.consumption = candidate
-                        if debug then print("DEBUG(getmAh): mAh Sensor Found from full scan: " .. battsel.source.consumption:name()) end
-                        break
-                    end
-                end
-            end
-        end
-
-        if not battsel.source.consumption then
-            if debug then print("DEBUG(getmAh): Could not get mAh sensor!") end
-            return 0
+    if battsel.source.consumption then
+        local value = battsel.source.consumption:value()
+        if value then
+            if debug then print("DEBUG(getmAh): mAh Reading: " .. math.floor(value) .. "mAh") end
+            return math.floor(value)
         end
     end
-
-    local value = battsel.source.consumption:value()
-    if value then
-        if debug then print("DEBUG(getmAh): mAh Reading: " .. math.floor(value) .. "mAh") end
-        return math.floor(value)
-    end
-
     return 0
 end
 
@@ -839,6 +880,7 @@ local function shouldRunBatteryCheck(delay, maxTime)
     end
 end
 
+local voltageAlertTimer = {}
 
 local function wakeup()
     local debug = battsel.useDebug.wakeup
@@ -853,9 +895,8 @@ local function wakeup()
         end
 
         -- Check for modelID sensor presence and assign currentModelID
-        if not battsel.source.modelID then 
-            battsel.source.modelID = system.getSource({category = CATEGORY_TELEMETRY, name = "Model ID"})
-        end
+        battsel.source.modelID = battsel.source.modelID or utils.getSensor("Model ID", nil)
+
         if battsel.source.modelID and battsel.source.modelID:value() then
             currentModelID = math.floor(battsel.source.modelID:value())
         end
@@ -924,18 +965,67 @@ local function wakeup()
         -- Set alertMute boolean if source exists and is valid
         local alertMute = battsel.source.mute and battsel.source.mute:state()
 
-        -- If alerts are enabled and alerts are not muted, run doAlert if newPercent matches any of the thresholds
+        -- If alerts are enabled and alerts are not muted, run doCapAlert if newPercent matches any of the thresholds
         if battsel.Config.enableAlerts and newPercent then
             if not alertMute then
                 if debug then print("DEBUG(wakeup): Alerts check running...") end
                 for _, threshold in ipairs(battsel.Config.Alerts) do
                     if newPercent == threshold then
-                        doAlert(threshold)
+                        doCapAlert(threshold)
                         break
                     end
                 end
             else
                 if debug then print("DEBUG(wakeup): Alerts are muted. Skipping alerts check...") end
+            end
+        end
+        
+        -- If voltage alerts are enabled and alerts are not muted, run doVoltAlert if currentVoltage matches any of the thresholds, but only if it's been below the threshold for the falsePositiveDelay
+        if battsel.Config.enableVoltageAlerts then
+            if not alertMute then
+                if debug then print("DEBUG(wakeup): Voltage Alerts check running...") end
+                local lowThreshold = battsel.Config.alertLowCellVoltage or 350
+                local criticalThreshold = battsel.Config.alertCriticalCellVoltage or 330
+                local falsePositiveDelay = battsel.Config.alertFalsePositiveDelay or 0
+
+                -- Try to get voltage and cell count from sensors
+                local currentVoltage
+                if battsel.source.voltage then
+                    currentVoltage = battsel.source.voltage:value()
+                end
+
+                if currentVoltage and cellCount and cellCount > 0 then
+                    local cellVoltage = currentVoltage / cellCount
+                    if debug then print("DEBUG(wakeup): Cell Voltage: " .. cellVoltage) end
+
+                    -- Use a single timer for both thresholds
+                    voltageAlertTimer = voltageAlertTimer or { state = nil, since = nil }
+
+                    local now = os.clock()
+                    local alertType = nil
+
+                    if cellVoltage < (criticalThreshold / 100) then
+                    alertType = "critical"
+                    elseif cellVoltage < (lowThreshold / 100) then
+                    alertType = "low"
+                    end
+
+                    if alertType then
+                        if voltageAlertTimer.state ~= alertType then
+                            voltageAlertTimer.state = alertType
+                            voltageAlertTimer.since = now
+                            if debug then print("DEBUG(wakeup): Starting " .. alertType .. " voltage alert timer") end
+                        elseif now - voltageAlertTimer.since >= falsePositiveDelay then
+                            if debug then print("DEBUG(wakeup): Cell Voltage is below " .. alertType .. " threshold for delay: " .. falsePositiveDelay) end
+                            doVoltAlert(cellVoltage, alertType)
+                            voltageAlertTimer.state = nil
+                            voltageAlertTimer.since = nil
+                        end
+                    else
+                    voltageAlertTimer.state = nil
+                    voltageAlertTimer.since = nil
+                    end
+                end
             end
         end
 
@@ -956,7 +1046,6 @@ local function wakeup()
         end
     end
 end
-
 
 -- This function is called when the user first selects the widget from the widget list, or when they select "configure widget"
 local function configure()
@@ -984,15 +1073,15 @@ local function configure()
     imagePanel:open(false)
     fillImagePanel(imagePanel, battsel)
 
-    if debug then print("DEBUG(configure): Filling Voltage Check Panel") end
-    voltageCheckPanel = form.addExpansionPanel("Voltage Check")
-    voltageCheckPanel:open(false)
-    fillVoltageCheckPanel(voltageCheckPanel, battsel)
+    if debug then print("DEBUG(configure): Filling Voltage Alerts Panel") end
+    voltAlertsPanel = form.addExpansionPanel("Voltage Alerts")
+      voltAlertsPanel:open(false)
+    fillVoltAlertsPanel(voltAlertsPanel, battsel)
 
     if debug then print("DEBUG(configure): Filling Alerts Panel") end
-    alertsPanel = form.addExpansionPanel("Capacity Alerts")
-    alertsPanel:open(false)
-    fillAlertsPanel(alertsPanel, battsel)
+    capAlertsPanel = form.addExpansionPanel("Capacity Alerts")
+    capAlertsPanel:open(false)
+    fillCapAlertsPanel(capAlertsPanel, battsel)
 
     -- Preferences Panel
     if debug then print("DEBUG(configure): Filling Preferences Panel") end
