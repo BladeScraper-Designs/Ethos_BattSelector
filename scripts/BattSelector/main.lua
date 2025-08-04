@@ -7,7 +7,7 @@ battsel.useDebug = {
     -- UI Panel Fillers
     fillBatteryPanel = false,
     fillFavoritesPanel = false,
-    fillImagePanel = false,
+    fillImagePanel = false, 
     fillVoltAlertsPanel = false,
     fillCapAlertsPanel = false,
     fillPrefsPanel = false,
@@ -21,9 +21,9 @@ battsel.useDebug = {
     write = false,
 
     -- Battery/Telemetry Logic
-    doBatteryVoltageCheck = true,
+    doBatteryVoltageCheck = false,
     getmAh = false,
-    updateRemainingSensor = false,
+    updateRemainingSensor = true,
     doCapAlert = false,
 
     -- Widget Lifecycle
@@ -31,7 +31,7 @@ battsel.useDebug = {
     build = false,
     configure = false,
     paint = false,
-    wakeup = true,
+    wakeup = false,
     close = false,
     init = false,
 
@@ -644,19 +644,7 @@ local function updateRemainingSensor()
     local debug = battsel.useDebug.updateRemainingSensor
     if not battsel.source.percent then
         if debug then print("Searching for Remaining Sensor") end
-        battsel.source.percent = utils.getSensor("Remaining", UNIT_PERCENT)
-        if not battsel.source.percent then
-            print("Remaining Sensor Not Found. Creating...")
-            battsel.source.percent = model.createSensor()
-            battsel.source.percent:name("Remaining")
-            battsel.source.percent:unit(UNIT_PERCENT)
-            battsel.source.percent:decimals(0)
-            battsel.source.percent:appId(0x4402)
-            battsel.source.percent:physId(0x11)
-            if debug then print(string.format("Remaining Sensor Created: 0x%04X 0x%02X", battsel.source.percent:appId(), battsel.source.percent:physId())) end
-        else
-            if debug then print(string.format("Remaining Sensor Found: 0x%04X 0x%02X", battsel.source.percent:appId(), battsel.source.percent:physId())) end
-        end
+        battsel.source.percent = utils.getSensor("Remaining")
     end
 
     if battsel.source.percent then

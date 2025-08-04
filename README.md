@@ -37,6 +37,11 @@ See [Rotorflight Model ID Telemetry Integration](#rotorflight-model-id-telemetry
 You can configure a Use Capacity or "fly-to" percentage, which is the percentage of the battery's nominal capacity you want to consume before landing.  When you hit 0% remaining, you've used that much.  Most people fly to 80-85%, and the default is 80%.<br>
 ![](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/img/Configure_Preferences.png?raw=true)
 
+## Installation
+Method 1. Download BattSelector.zip from the latest [Release](https://github.com/BladeScraper-Designs/Ethos_BattSelector/releases) and use Ethos Suite LUA Development tools to install it.<br>
+Method 2. Download [main.lua](https://github.com/BladeScraper-Designs/Ethos_BattSelector/blob/main/scripts/BattSelector/main.lua) directly and place it in a folder called BattSelector in your scripts directory. 
+
+
 ### Version History
   - Version 1.0 - Initial Release.  Basic Functionality is there.  Only compatible with 256x100px widget size.  No mAh Sensor Selection Available.
   - Version 1.1 - Small Update.  Fixed/improved mAh sensor detection.
